@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maybank — vSphere Estate Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #FFFFFF;
+    color: #000000;
+    padding: 24px 30px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .header {
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2.5px solid #0D47A1;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; color: #000; }
+  .header p { font-size: 9.5px; color: #555; margin-top: 2px; }
+
+  /* ===== TOP STATS ===== */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-box {
+    background: #F8F9FA;
+    border: 1.5px solid #DEE2E6;
+    border-radius: 6px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .stat-box.alert {
+    background: #FFF5F5;
+    border-color: #EF9A9A;
+  }
+  .stat-label {
+    font-size: 7.5px;
+    font-weight: 700;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+  .stat-num {
+    font-size: 26px;
+    font-weight: 800;
+    color: #111;
+    line-height: 1.1;
+  }
+  .stat-box.alert .stat-num { color: #D32F2F; }
+  .stat-sub {
+    font-size: 9px;
+    color: #888;
+    font-weight: 600;
+    margin-top: 1px;
+  }
+  .stat-box.alert .stat-sub { color: #E53935; }
+
+  /* ===== VERSION TIERS ===== */
+  .tiers-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .tier {
+    border-radius: 7px;
+    padding: 14px 16px;
+    border: 2px solid;
+    position: relative;
+  }
+  .tier-g { background: #F1F8F1; border-color: #43A047; }
+  .tier-o { background: #FFF8F0; border-color: #EF6C00; }
+  .tier-r { background: #FFF3F3; border-color: #D32F2F; }
+
+  .tier-tag {
+    position: absolute;
+    top: -9px;
+    left: 14px;
+    font-size: 7px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: #FFF;
+    padding: 2px 8px;
+    border-radius: 8px;
+  }
+  .tag-g { background: #43A047; }
+  .tag-o { background: #EF6C00; }
+  .tag-r { background: #D32F2F; }
+
+  .tier-ver {
+    font-size: 22px;
+    font-weight: 800;
+    color: #111;
+    margin-top: 2px;
+  }
+  .tier-desc {
+    font-size: 9px;
+    color: #555;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .tier-r .tier-desc { color: #D32F2F; font-weight: 700; }
+
+  .tier-nums {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+  .tn {
+    background: #FFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 5px;
+    padding: 7px 4px;
+    text-align: center;
+  }
+  .tn-val {
+    font-size: 16px;
+    font-weight: 800;
+    color: #111;
+    line-height: 1;
+  }
+  .tn-label {
+    font-size: 7px;
+    font-weight: 700;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+
+  /* ===== BOTTOM SECTION ===== */
+  .bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .panel {
+    border: 1.5px solid #DEE2E6;
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 8px 14px;
+    background: #F8F9FA;
+    border-bottom: 1px solid #DEE2E6;
+    font-size: 9px;
+    font-weight: 800;
+    color: #444;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .panel-body {
+    padding: 14px;
+  }
+
+  /* DC version bars */
+  .dc-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .dc-row:last-child { margin-bottom: 0; }
+  .dc-label {
+    width: 80px;
+    flex-shrink: 0;
+  }
+  .dc-name {
+    font-size: 10px;
+    font-weight: 700;
+    color: #111;
+  }
+  .dc-count {
+    font-size: 8px;
+    color: #888;
+  }
+  .dc-bar-wrap {
+    flex: 1;
+    display: flex;
+    height: 22px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #EEEEEE;
+  }
+  .dc-bar-seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: 700;
+    color: #FFF;
+    white-space: nowrap;
+    min-width: 24px;
+  }
+  .seg-8 { background: #43A047; }
+  .seg-7 { background: #EF6C00; }
+  .seg-6 { background: #D32F2F; }
+
+  /* Hardware matrix */
+  .hw-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .hw-card {
+    border: 1px solid #E8E8E8;
+    border-radius: 5px;
+    padding: 10px;
+    text-align: center;
+  }
+  .hw-title {
+    font-size: 7.5px;
+    font-weight: 700;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 4px;
+  }
+  .hw-spec {
+    font-size: 12px;
+    font-weight: 800;
+    color: #111;
+    margin-bottom: 6px;
+  }
+  .hw-dots {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+  }
+  .hd { width: 9px; height: 9px; border-radius: 50%; }
+  .hd-s { background: #1565C0; }
+  .hd-m { background: #00838F; }
+  .hd-l { background: #2E7D32; }
+  .hd-xl { background: #E65100; }
+
+  .hw-legend {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #EEEEEE;
+  }
+  .hw-leg {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 7.5px;
+    color: #777;
+    font-weight: 600;
+  }
+  .hw-leg-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* Sub-version table */
+  .subver-table {
+    width: 100%;
+    margin-top: 10px;
+    border-top: 1px solid #EEEEEE;
+    padding-top: 10px;
+  }
+  .subver-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+  .subver-label {
+    width: 60px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #333;
+  }
+  .subver-bar-wrap {
+    flex: 1;
+    height: 14px;
+    background: #F0F0F0;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .subver-bar {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding-left: 6px;
+    font-size: 7.5px;
+    font-weight: 700;
+    color: #FFF;
+  }
+  .subver-count {
+    width: 48px;
+    text-align: right;
+    font-size: 8px;
+    font-weight: 700;
+    color: #555;
+    flex-shrink: 0;
+    padding-left: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>vSphere Estate — Platform Health Dashboard</h1>
+  <p>Virtualization infrastructure overview across CBJDC, PJDC/KLDC and MWK data centers</p>
+</div>
+
+<!-- TOP STATS -->
+<div class="stats-row">
+  <div class="stat-box">
+    <div class="stat-label">Total Hosts</div>
+    <div class="stat-num">760</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Total Compute</div>
+    <div class="stat-num">42,856</div>
+    <div class="stat-sub">Cores</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Total Memory</div>
+    <div class="stat-num">776 TB</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Total VMs</div>
+    <div class="stat-num">9,798</div>
+  </div>
+  <div class="stat-box alert">
+    <div class="stat-label">EOS Risk</div>
+    <div class="stat-num">422</div>
+    <div class="stat-sub">Hosts (56%)</div>
+  </div>
+</div>
+
+<!-- VERSION TIERS -->
+<div class="tiers-section">
+  <div class="tier tier-g">
+    <div class="tier-tag tag-g">Tier 1: Supported</div>
+    <div class="tier-ver">vSphere 8.0</div>
+    <div class="tier-desc">Standard Operating Environment</div>
+    <div class="tier-nums">
+      <div class="tn"><div class="tn-val">336</div><div class="tn-label">Hosts</div></div>
+      <div class="tn"><div class="tn-val">20,780</div><div class="tn-label">Cores</div></div>
+      <div class="tn"><div class="tn-val">5,709</div><div class="tn-label">VMs</div></div>
+    </div>
+  </div>
+  <div class="tier tier-o">
+    <div class="tier-tag tag-o">Tier 2: Legacy (EOS)</div>
+    <div class="tier-ver">vSphere 7.0</div>
+    <div class="tier-desc">End of Support (Oct 2025)</div>
+    <div class="tier-nums">
+      <div class="tn"><div class="tn-val">376</div><div class="tn-label">Hosts</div></div>
+      <div class="tn"><div class="tn-val">20,444</div><div class="tn-label">Cores</div></div>
+      <div class="tn"><div class="tn-val">3,572</div><div class="tn-label">VMs</div></div>
+    </div>
+  </div>
+  <div class="tier tier-r">
+    <div class="tier-tag tag-r">Tier 3: Obsolete</div>
+    <div class="tier-ver">vSphere 6.x</div>
+    <div class="tier-desc">CRITICAL RISK</div>
+    <div class="tier-nums">
+      <div class="tn"><div class="tn-val">46</div><div class="tn-label">Hosts</div></div>
+      <div class="tn"><div class="tn-val">1,568</div><div class="tn-label">Cores</div></div>
+      <div class="tn"><div class="tn-val">512</div><div class="tn-label">VMs</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM TWO PANELS -->
+<div class="bottom">
+
+  <!-- LEFT: DC Version Distribution -->
+  <div class="panel">
+    <div class="panel-head">Version Distribution by Data Center</div>
+    <div class="panel-body">
+
+      <div class="dc-row">
+        <div class="dc-label">
+          <div class="dc-name">CBJDC</div>
+          <div class="dc-count">398 hosts</div>
+        </div>
+        <div class="dc-bar-wrap">
+          <div class="dc-bar-seg seg-8" style="width:25.6%">8.x · 26%</div>
+          <div class="dc-bar-seg seg-7" style="width:65.1%">7.x · 65%</div>
+          <div class="dc-bar-seg seg-6" style="width:9.3%">6.x</div>
+        </div>
+      </div>
+
+      <div class="dc-row">
+        <div class="dc-label">
+          <div class="dc-name">PJDC / KLDC</div>
+          <div class="dc-count">218 hosts</div>
+        </div>
+        <div class="dc-bar-wrap">
+          <div class="dc-bar-seg seg-8" style="width:41.3%">8.x · 41%</div>
+          <div class="dc-bar-seg seg-7" style="width:53.7%">7.x · 54%</div>
+          <div class="dc-bar-seg seg-6" style="width:5%">6.x</div>
+        </div>
+      </div>
+
+      <div class="dc-row">
+        <div class="dc-label">
+          <div class="dc-name">MWK</div>
+          <div class="dc-count">144 hosts</div>
+        </div>
+        <div class="dc-bar-wrap">
+          <div class="dc-bar-seg seg-8" style="width:100%">8.x · 100%</div>
+        </div>
+      </div>
+
+      <!-- Sub-version breakdown -->
+      <div class="subver-table">
+        <div class="subver-row">
+          <div class="subver-label">v8.0.3</div>
+          <div class="subver-bar-wrap"><div class="subver-bar seg-8" style="width:44.2%">336</div></div>
+          <div class="subver-count">336 hosts</div>
+        </div>
+        <div class="subver-row">
+          <div class="subver-label">v7.0.3</div>
+          <div class="subver-bar-wrap"><div class="subver-bar seg-7" style="width:47.9%">364</div></div>
+          <div class="subver-count">364 hosts</div>
+        </div>
+        <div class="subver-row">
+          <div class="subver-label">v7.0.2</div>
+          <div class="subver-bar-wrap"><div class="subver-bar seg-7" style="width:1.6%"></div></div>
+          <div class="subver-count">12 hosts</div>
+        </div>
+        <div class="subver-row">
+          <div class="subver-label">v6.7.0</div>
+          <div class="subver-bar-wrap"><div class="subver-bar seg-6" style="width:5%">38</div></div>
+          <div class="subver-count">38 hosts</div>
+        </div>
+        <div class="subver-row">
+          <div class="subver-label">v6.5.0</div>
+          <div class="subver-bar-wrap"><div class="subver-bar seg-6" style="width:1.1%"></div></div>
+          <div class="subver-count">8 hosts</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RIGHT: Compute Fabric -->
+  <div class="panel">
+    <div class="panel-head">Compute Fabric (Hardware Matrix)</div>
+    <div class="panel-body">
+      <div class="hw-grid">
+        <div class="hw-card">
+          <div class="hw-title">High Density</div>
+          <div class="hw-spec">2 Skt / 88 Cores</div>
+          <div class="hw-dots">
+            <div class="hd hd-l"></div><div class="hd hd-xl"></div><div class="hd hd-l"></div>
+          </div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-title">Standard</div>
+          <div class="hw-spec">2 Skt / 56 Cores</div>
+          <div class="hw-dots">
+            <div class="hd hd-s"></div><div class="hd hd-m"></div>
+          </div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-title">Legacy / Small</div>
+          <div class="hw-spec">2 Skt / 32 Cores</div>
+          <div class="hw-dots">
+            <div class="hd hd-s"></div>
+          </div>
+        </div>
+        <div class="hw-card">
+          <div class="hw-title">Mid-Range</div>
+          <div class="hw-spec">2 Skt / 40 Cores</div>
+          <div class="hw-dots">
+            <div class="hd hd-m"></div>
+          </div>
+        </div>
+      </div>
+      <div class="hw-legend">
+        <div class="hw-leg"><div class="hw-leg-dot hd-s"></div>Small (&lt;8GB)</div>
+        <div class="hw-leg"><div class="hw-leg-dot hd-m"></div>Standard (8–16GB)</div>
+        <div class="hw-leg"><div class="hw-leg-dot hd-l"></div>Large (16–32GB)</div>
+        <div class="hw-leg"><div class="hw-leg-dot hd-xl"></div>Monster (&gt;32GB)</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

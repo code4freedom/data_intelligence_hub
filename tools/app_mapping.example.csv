@@ -1,0 +1,8 @@
+pattern,application
+sql|oracle|mysql|postgres,Database
+sap,ERP
+web|nginx|apache|iis,Web
+api|svc|service,Application
+citrix|horizon|vdi,VDI
+veeam|backup,Backup
+ad|domain|dns|dhcp,Identity

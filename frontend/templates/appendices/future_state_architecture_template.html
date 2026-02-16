@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Future State Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #151515; background: #fff; padding: 24px; }
+  h1 { font-size: 20px; color: #12406a; margin-bottom: 4px; }
+  .sub { font-size: 11px; color: #5f6a72; margin-bottom: 14px; }
+  .layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; }
+  .panel { border: 1px solid #d8e2eb; border-radius: 6px; padding: 10px; background: #fbfdff; }
+  .panel h2 { font-size: 12px; color: #12406a; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th { background: #0a6aa1; color: #fff; font-size: 10px; text-align: left; padding: 6px; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; }
+  tr:nth-child(even) { background: #f7fbff; }
+  .kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .k { border: 1px solid #d8e2eb; border-radius: 6px; padding: 8px; background: #fff; }
+  .k .l { font-size: 9px; color: #6a7782; text-transform: uppercase; font-weight: 700; }
+  .k .v { font-size: 18px; color: #0a4d7a; font-weight: 800; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <h1>Future State Architecture</h1>
+  <div class="sub">Forecasted posture based on historical RVTools ingests and current baseline</div>
+
+  <div class="kpi">
+    <div class="k"><div class="l">Target Hosts</div><div class="v">{{ consolidation_optimization.target_hosts if consolidation_optimization else 0 }}</div></div>
+    <div class="k"><div class="l">Retireable Hosts</div><div class="v">{{ consolidation_optimization.retireable_hosts_estimate if consolidation_optimization else 0 }}</div></div>
+    <div class="k"><div class="l">Projected VM/Host</div><div class="v">{{ what_if_simulation.projected_vm_per_host if what_if_simulation else 0 }}</div></div>
+  </div>
+
+  <div class="layout" style="margin-top:10px;">
+    <div class="panel">
+      <h2>Capacity Forecast</h2>
+      <table>
+        <tr><th>Step</th><th>Projected VMs</th><th>Projected Hosts</th><th>Projected Memory (TB)</th></tr>
+        {% if forecasting and forecasting.vm_forecast %}
+          {% for row in forecasting.vm_forecast %}
+          <tr>
+            <td>T+{{ row.step }}</td>
+            <td>{{ row.value }}</td>
+            <td>{% if forecasting.host_forecast and forecasting.host_forecast|length >= row.step %}{{ forecasting.host_forecast[row.step - 1].value }}{% else %}-{% endif %}</td>
+            <td>{% if forecasting.memory_tb_forecast and forecasting.memory_tb_forecast|length >= row.step %}{{ forecasting.memory_tb_forecast[row.step - 1].value }}{% else %}-{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="4">Insufficient historical data to calculate forecast.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>What-If Scenario</h2>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Growth %</td><td>{{ what_if_simulation.growth_pct if what_if_simulation else 0 }}</td></tr>
+        <tr><td>Projected Total VMs</td><td>{{ what_if_simulation.projected_total_vms if what_if_simulation else 0 }}</td></tr>
+        <tr><td>Projected Total vCPU</td><td>{{ what_if_simulation.projected_total_vcpu if what_if_simulation else 0 }}</td></tr>
+        <tr><td>Projected Total Memory (TB)</td><td>{{ what_if_simulation.projected_total_memory_tb if what_if_simulation else 0 }}</td></tr>
+        <tr><td>Days to 10k VMs</td><td>{{ forecasting.days_to_threshold.vms_10000 if forecasting and forecasting.days_to_threshold else "n/a" }}</td></tr>
+        <tr><td>Days to 20TB Memory</td><td>{{ forecasting.days_to_threshold.memory_tb_20 if forecasting and forecasting.days_to_threshold else "n/a" }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:10px;">
+    <h2>Transformation Backlog</h2>
+    <table>
+      <tr><th>Priority</th><th>Action</th><th>Count</th></tr>
+      {% if action_backlog_ml %}
+        {% for b in action_backlog_ml %}
+        <tr>
+          <td>{{ b.priority }}</td>
+          <td>{{ b.title }}</td>
+          <td>{{ b.count }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="3">No ML-derived backlog available from current data.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</body>
+</html>

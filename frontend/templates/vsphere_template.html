@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VCF Intelligence Hub Report</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
+    color: #141414;
+    padding: 28px 32px;
+    padding-bottom: 42px;
+    line-height: 1.45;
+  }
+  .header { margin-bottom: 18px; border-bottom: 3px solid #0a6aa1; padding-bottom: 10px; }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .logo { width:120px; height:80px; object-fit: contain; object-position: center; }
+  .header h1 { font-size: 26px; margin-bottom: 4px; }
+  .header p { color: #4e5965; font-size: 12px; }
+  .badge {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: #eef6fb;
+    border: 1px solid #b9dff2;
+    color: #0a6aa1;
+    margin-top: 8px;
+  }
+  .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .stat-tile {
+    border: 1px solid #cbd5df;
+    border-radius: 8px;
+    background: #eef1f5;
+    padding: 10px;
+    text-align: center;
+  }
+  .stat-tile.risk {
+    border-color: #f3b6b6;
+    background: #fff1f1;
+  }
+  .stat-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #4b5563;
+    font-weight: 700;
+  }
+  .stat-value {
+    font-size: 34px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-top: 2px;
+  }
+  .stat-sub { font-size: 10px; color: #6b7280; }
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 8px 0 10px;
+  }
+  .tier-card {
+    border: 2px solid #d1d5db;
+    border-radius: 8px;
+    padding: 10px;
+    background: #fafafa;
+  }
+  .tier-card h3 {
+    font-size: 12px;
+    margin-bottom: 2px;
+    color: #0f172a;
+  }
+  .tier-card p { font-size: 10px; color: #475569; }
+  .tier-card.green { border-color: #2e7d32; background: #edf7ef; }
+  .tier-card.amber { border-color: #ef6c00; background: #fff5eb; }
+  .tier-card.red { border-color: #d32f2f; background: #fff1f1; }
+  .tier-mini {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .mini {
+    background: #fff;
+    border: 1px solid #dbe5ec;
+    border-radius: 6px;
+    padding: 5px;
+    text-align: center;
+  }
+  .mini .v { font-size: 18px; font-weight: 800; }
+  .mini .l { font-size: 8px; text-transform: uppercase; color: #64748b; letter-spacing: 0.8px; }
+  .first-page-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .logical-page {
+    page-break-before: always;
+    margin-top: 4px;
+  }
+  .logical-vc {
+    border: 2px solid #0a6aa1;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .logical-vc-head {
+    background: #eaf4fb;
+    border-bottom: 1px solid #c9dfed;
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f2b3d;
+  }
+  .logical-cluster {
+    border-top: 1px solid #e5edf3;
+    padding: 8px 10px;
+  }
+  .logical-cluster:first-child { border-top: 0; }
+  .cluster-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .cluster-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1f2937;
+  }
+  .cluster-meta {
+    font-size: 10px;
+    color: #4b5563;
+  }
+  .risk-pill {
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 8px;
+    border: 1px solid #d1d5db;
+    background: #f8fafc;
+    color: #334155;
+  }
+  .risk-pill.high { background: #fff1f1; border-color: #fecaca; color: #b91c1c; }
+  .risk-pill.elevated { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .snapshot-row { margin-bottom: 6px; }
+  .bar-wrap { width: 100%; background: #e5e7eb; height: 16px; border-radius: 4px; overflow: hidden; }
+  .bar-fill {
+    height: 16px;
+    background: #15803d;
+    color: #fff;
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 16px;
+  }
+  .section { margin-top: 12px; page-break-inside: avoid; }
+  .section h2 {
+    font-size: 14px;
+    border-left: 4px solid #0a6aa1;
+    padding-left: 8px;
+    margin-bottom: 8px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .box {
+    border: 1px solid #dbe5ec;
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+  }
+  .box h3 { font-size: 12px; margin-bottom: 6px; color: #23313d; }
+  ul { padding-left: 16px; }
+  li { margin-bottom: 4px; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th {
+    text-align: left;
+    font-size: 10px;
+    background: #0a6aa1;
+    color: white;
+    padding: 6px;
+    font-weight: 700;
+  }
+  td {
+    font-size: 10px;
+    padding: 6px;
+    border-bottom: 1px solid #ecf1f5;
+  }
+  tr:nth-child(even) { background: #f9fcff; }
+  .report-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 12px;
+    text-align: center;
+    color: #7a8691;
+    font-size: 10px;
+    background: #ffffff;
+    border-top: 1px solid #dbe5ec;
+    z-index: 9999;
+  }
+  .appendix-page {
+    page-break-before: always;
+    margin-top: 10px;
+  }
+  .appendix-page h2 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    border-left: 4px solid #0a6aa1;
+    padding-left: 8px;
+  }
+  .appendix-content {
+    width: 100%;
+    border: 1px solid #dbe5ec;
+    border-radius: 4px;
+    background: #fff;
+    overflow: visible;
+  }
+  @media print {
+    body { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="brand">
+    <img class="logo" src="{{ logo_url }}" alt="VCF Intelligence Hub logo" />
+    <div>
+      <h1>VCF Intelligence Hub</h1>
+      <p style="margin-top:2px;">Enterprise Virtualization Intelligence Report</p>
+    </div>
+  </div>
+  <span class="badge">Executive Risk Score: {{ executive_score if executive_score is not none else 0 }}/100</span>
+</div>
+
+<div class="hero-stats">
+  <div class="stat-tile">
+    <div class="stat-label">Total Hosts</div>
+    <div class="stat-value">{{ total_hosts if total_hosts else 0 }}</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-label">Total Compute</div>
+    <div class="stat-value">{{ total_compute if total_compute else 0 }}</div>
+    <div class="stat-sub">cores</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-label">Total Memory</div>
+    <div class="stat-value">{{ total_memory if total_memory else '--' }}</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-label">Total VMs</div>
+    <div class="stat-value">{{ total_vms if total_vms else 0 }}</div>
+  </div>
+  <div class="stat-tile risk">
+    <div class="stat-label">EOS Risk</div>
+    <div class="stat-value" style="color:#dc2626;">{{ lifecycle.eos_risk_vms if lifecycle and lifecycle.eos_risk_vms is not none else eos_risk }}</div>
+    <div class="stat-sub">VMs</div>
+  </div>
+</div>
+
+<div class="tier-grid">
+  <div class="tier-card green">
+    <h3>Tier 1: Resilient</h3>
+    <p>Stable operations with healthy performance baseline.</p>
+    <div class="tier-mini">
+      <div class="mini"><div class="v">{{ executive_score if executive_score is not none else 0 }}</div><div class="l">Risk Score</div></div>
+      <div class="mini"><div class="v">{{ executive_components.vcpu_pcpu_ratio if executive_components else 0 }}x</div><div class="l">vCPU:pCPU</div></div>
+      <div class="mini"><div class="v">{{ operational_scorecard.efficiency_score if operational_scorecard else 0 }}</div><div class="l">Efficiency</div></div>
+    </div>
+  </div>
+  <div class="tier-card amber">
+    <h3>Tier 2: Optimize</h3>
+    <p>Consolidation and right-sizing opportunities identified.</p>
+    <div class="tier-mini">
+      <div class="mini"><div class="v">{{ performance.right_size_candidates if performance else 0 }}</div><div class="l">Candidates</div></div>
+      <div class="mini"><div class="v">{{ consolidation_optimization.retireable_hosts_estimate if consolidation_optimization else 0 }}</div><div class="l">Retirable</div></div>
+      <div class="mini"><div class="v">{{ performance.estimated_reclaim_vcpu if performance else 0 }}</div><div class="l">Reclaim vCPU</div></div>
+    </div>
+  </div>
+  <div class="tier-card red">
+    <h3>Tier 3: Modernize</h3>
+    <p>Lifecycle and anomaly hotspots requiring remediation.</p>
+    <div class="tier-mini">
+      <div class="mini"><div class="v">{{ lifecycle.eos_risk_vms if lifecycle else 0 }}</div><div class="l">EOS VMs</div></div>
+      <div class="mini"><div class="v">{{ anomalies.events|length if anomalies and anomalies.events else 0 }}</div><div class="l">Anomalies</div></div>
+      <div class="mini"><div class="v">{{ forecasting.days_to_threshold.vms_10000 if forecasting and forecasting.days_to_threshold and forecasting.days_to_threshold.vms_10000 is not none else 'n/a' }}</div><div class="l">Days to 10k</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="first-page-panels">
+  <div class="box">
+    <h3>Volume Distribution By Ingest</h3>
+    {% if trends %}
+      {% set max_vms = trends|map(attribute='total_vms')|max %}
+      {% for t in trends[-5:] %}
+      <div class="snapshot-row">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#334155;margin-bottom:2px;">
+          <span>{{ t.ingest_id }}</span><span>{{ t.total_vms }} VMs</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width: {{ ((t.total_vms / (max_vms if max_vms else 1)) * 100)|round(1) }}%;">
+            {{ ((t.total_vms / (max_vms if max_vms else 1)) * 100)|round(0) }}%
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p style="font-size:11px;color:#64748b;">No historical snapshots available yet.</p>
+    {% endif %}
+  </div>
+  <div class="box">
+    <h3>Compute Fabric (Health Matrix)</h3>
+    <table>
+      <tr><th>Signal</th><th>Value</th><th>Interpretation</th></tr>
+      <tr><td>vCPU:pCPU Ratio</td><td>{{ executive_components.vcpu_pcpu_ratio if executive_components else 0 }}x</td><td>Scheduling pressure indicator</td></tr>
+      <tr><td>vMem:pMem Ratio</td><td>{{ executive_components.vmem_pmem_ratio if executive_components else 0 }}x</td><td>Memory contention indicator</td></tr>
+      <tr><td>Storage Overprovision</td><td>{{ performance.storage_overprov_ratio if performance else 0 }}x</td><td>Thin/thick utilization spread</td></tr>
+      <tr><td>Mapping Coverage</td><td>{{ application.mapping_coverage_pct if application else 0 }}%</td><td>Business app attribution quality</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="logical-page">
+  <div class="section">
+    <h2>Hardware / vSphere Logical View</h2>
+    <p style="font-size:10px;color:#64748b;margin-bottom:8px;">
+      Topology path: <strong>vCenter -> Cluster -> Nodes</strong>. Node rows include hardware details, vSphere version and workload pressure signals.
+    </p>
+
+    {% if logical_view and logical_view.vcenters %}
+      {% for vc in logical_view.vcenters %}
+      <div class="logical-vc">
+        <div class="logical-vc-head">
+          <span>{{ vc.name }}</span>
+          <span>{{ vc.cluster_count }} cluster(s) | {{ vc.host_count }} host(s) | {{ vc.vm_count }} VM(s)</span>
+        </div>
+        {% for cl in vc.clusters %}
+        <div class="logical-cluster">
+          <div class="cluster-head">
+            <div>
+              <div class="cluster-name">{{ cl.name }}</div>
+              <div class="cluster-meta">{{ cl.host_count }} host(s) | {{ cl.vm_count }} VM(s) | {{ cl.vm_per_host }} VM/host</div>
+            </div>
+            <div class="risk-pill {% if cl.risk_band == 'High Density' %}high{% elif cl.risk_band == 'Elevated' %}elevated{% endif %}">
+              {{ cl.risk_band }}
+            </div>
+          </div>
+          <table>
+            <tr>
+              <th>Node / Host</th>
+              <th>Hardware Details</th>
+              <th>vSphere Version</th>
+              <th>No. of VMs</th>
+              <th>Allocated vCPU</th>
+              <th>Allocated Memory (GB)</th>
+              <th>Powered-Off VMs</th>
+              <th>Top OS Family</th>
+            </tr>
+            {% for n in cl.nodes %}
+            <tr>
+              <td>{{ n.host }}</td>
+              <td>{{ n.hardware_details }}</td>
+              <td>{{ n.vsphere_version }}</td>
+              <td>{{ n.vm_count }}</td>
+              <td>{{ n.allocated_vcpu }}</td>
+              <td>{{ n.allocated_memory_gb }}</td>
+              <td>{{ n.powered_off_vms }}</td>
+              <td>{{ n.top_os_family }}</td>
+            </tr>
+            {% endfor %}
+            {% if cl.nodes_hidden_count and cl.nodes_hidden_count > 0 %}
+            <tr><td colspan="8">+ {{ cl.nodes_hidden_count }} additional node(s) not shown on this page.</td></tr>
+            {% endif %}
+          </table>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="box">
+        <p style="font-size:11px;color:#475569;">Logical hierarchy could not be built from current sheet. Upload vInfo with Datacenter/Cluster/Host columns for full topology mapping.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <h2>Cluster Hotspots</h2>
+  <table>
+    <tr>
+      <th>Cluster</th>
+      <th>VMs</th>
+      <th>Hosts</th>
+      <th>VM/Host</th>
+    </tr>
+    {% for c in top_clusters %}
+    <tr>
+      <td>{{ c.cluster }}</td>
+      <td>{{ c.vms }}</td>
+      <td>{{ c.hosts }}</td>
+      <td>{{ c.vm_per_host }}</td>
+    </tr>
+    {% endfor %}
+    {% if not top_clusters %}
+    <tr><td colspan="4">No cluster data available.</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="section">
+  <h2>Application Intelligence</h2>
+  <table>
+    <tr>
+      <th>Application Group</th>
+      <th>VM Count</th>
+    </tr>
+    {% if application and application.top_app_groups %}
+      {% for a in application.top_app_groups %}
+      <tr>
+        <td>{{ a.application }}</td>
+        <td>{{ a.vm_count }}</td>
+      </tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="2">No application grouping available.</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="section">
+  <h2>Historical Trends (By Ingest)</h2>
+  <table>
+    <tr>
+      <th>Ingest</th>
+      <th>Total VMs</th>
+      <th>Hosts</th>
+      <th>vCPU</th>
+      <th>Memory TB</th>
+      <th>EOS VMs</th>
+    </tr>
+    {% for t in trends %}
+    <tr>
+      <td>{{ t.ingest_id }}</td>
+      <td>{{ t.total_vms }}</td>
+      <td>{{ t.total_hosts }}</td>
+      <td>{{ t.total_vcpu }}</td>
+      <td>{{ t.total_memory_tb }}</td>
+      <td>{{ t.eos_risk_vms }}</td>
+    </tr>
+    {% endfor %}
+    {% if not trends %}
+    <tr><td colspan="6">No historical snapshots yet. Add more ingests to enable trend lines.</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="section">
+  <h2>Forecasting & Capacity Outlook</h2>
+  <table>
+    <tr>
+      <th>Forecast Step</th>
+      <th>Projected VMs</th>
+      <th>Projected Memory (TB)</th>
+      <th>Projected Hosts</th>
+    </tr>
+    {% if forecasting and forecasting.vm_forecast %}
+      {% for f in forecasting.vm_forecast %}
+      <tr>
+        <td>{{ f.step }}</td>
+        <td>{{ f.value }}</td>
+        <td>
+          {% if forecasting.memory_tb_forecast and forecasting.memory_tb_forecast|length >= f.step %}
+            {{ forecasting.memory_tb_forecast[f.step-1].value }}
+          {% else %}-{% endif %}
+        </td>
+        <td>
+          {% if forecasting.host_forecast and forecasting.host_forecast|length >= f.step %}
+            {{ forecasting.host_forecast[f.step-1].value }}
+          {% else %}-{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="4">Insufficient history for forecasting. Add more ingests.</td></tr>
+    {% endif %}
+  </table>
+  <p style="margin-top:6px; font-size:10px; color:#5f6b76;">
+    Days to 10k VMs: {{ forecasting.days_to_threshold.vms_10000 if forecasting and forecasting.days_to_threshold else 'n/a' }} |
+    Days to 20 TB memory: {{ forecasting.days_to_threshold.memory_tb_20 if forecasting and forecasting.days_to_threshold else 'n/a' }}
+  </p>
+</div>
+
+<div class="section">
+  <h2>Anomaly Detection & Drift</h2>
+  <div class="grid-2">
+    <div class="box">
+      <h3>Anomaly Events</h3>
+      <ul>
+        {% if anomalies and anomalies.events %}
+          {% for a in anomalies.events %}
+          <li>{{ a.ingest_id }} | VMs={{ a.total_vms }}, Hosts={{ a.total_hosts }}, EOS={{ a.eos_risk_vms }}</li>
+          {% endfor %}
+        {% else %}
+          <li>No major anomalies detected.</li>
+        {% endif %}
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Governance Drift</h3>
+      <ul>
+        {% if drift_governance and drift_governance.available and drift_governance.changes %}
+          {% for c in drift_governance.changes %}
+          <li>{{ c.metric }}: {{ c.from }} -> {{ c.to }} ({{ c.delta }})</li>
+          {% endfor %}
+        {% else %}
+          <li>No significant drift across latest snapshots.</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Optimization & What-If</h2>
+  <table>
+    <tr>
+      <th>Scenario</th>
+      <th>Key Metric</th>
+      <th>Value</th>
+    </tr>
+    <tr>
+      <td>Host Consolidation</td>
+      <td>Retireable Hosts (Estimate)</td>
+      <td>{{ consolidation_optimization.retireable_hosts_estimate if consolidation_optimization else 0 }}</td>
+    </tr>
+    <tr>
+      <td>Host Consolidation</td>
+      <td>Target Hosts</td>
+      <td>{{ consolidation_optimization.target_hosts if consolidation_optimization else 0 }}</td>
+    </tr>
+    <tr>
+      <td>What-If Growth</td>
+      <td>Projected VMs</td>
+      <td>{{ what_if_simulation.projected_total_vms if what_if_simulation else 0 }}</td>
+    </tr>
+    <tr>
+      <td>What-If Growth</td>
+      <td>Projected VM/Host</td>
+      <td>{{ what_if_simulation.projected_vm_per_host if what_if_simulation else 0 }}</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Operational Scorecard</h2>
+  <table>
+    <tr>
+      <th>Dimension</th>
+      <th>Score</th>
+    </tr>
+    <tr><td>Risk</td><td>{{ operational_scorecard.risk_score if operational_scorecard else 0 }}</td></tr>
+    <tr><td>Efficiency</td><td>{{ operational_scorecard.efficiency_score if operational_scorecard else 0 }}</td></tr>
+    <tr><td>Lifecycle</td><td>{{ operational_scorecard.lifecycle_score if operational_scorecard else 0 }}</td></tr>
+    <tr><td>Growth Hygiene</td><td>{{ operational_scorecard.growth_hygiene_score if operational_scorecard else 0 }}</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Action Backlog</h2>
+  <ul>
+    {% for item in insights %}
+    <li>{{ item }}</li>
+    {% endfor %}
+    {% if not insights %}
+    <li>No immediate action backlog detected.</li>
+    {% endif %}
+  </ul>
+  {% if action_backlog_ml %}
+  <ul style="margin-top:8px;">
+    {% for i in action_backlog_ml %}
+    <li>[{{ i.priority }}] {{ i.title }} ({{ i.count }})</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<div class="report-footer">VCF Intelligence Hub | Enterprise Data Intelligence Report | Author: Samir Roshan</div>
+
+{% if example_pages %}
+  {% for page in example_pages %}
+  <div class="appendix-page">
+    <h2>{{ page.title }}</h2>
+    <div class="appendix-content">{{ page.html }}</div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+</body>
+</html>

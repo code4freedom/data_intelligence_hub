@@ -1,0 +1,115 @@
+services:
+  parser:
+    build:
+      context: .
+      dockerfile: docker/parser/Dockerfile
+    image: rvtools-chunker-parser:local
+    volumes:
+      - ./:/app:cached
+      - ./data:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=rvtools
+    entrypoint: ["/app/docker/parser/entrypoint.sh"]
+    # run with: docker compose run --rm parser python run_parser.py --input /data/RVTools.xlsx --sheet vInfo --out /data/chunks --chunk-size 5000
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    image: rvtools-chunker-backend:local
+    volumes:
+      - ./:/app:cached
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=rvtools
+      - POSTGRES_USER=rvtools
+      - POSTGRES_PASSWORD=rvtools
+      - APP_MAPPING_CSV=/app/tools/app_mapping.example.csv
+    depends_on:
+      - redis
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app/frontend
+    volumes:
+      - ./:/app:cached
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
+    command: ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
+    depends_on:
+      - backend
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    image: rvtools-chunker-worker:local
+    volumes:
+      - ./:/app:cached
+      - ./data:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=rvtools
+      - POSTGRES_USER=rvtools
+      - POSTGRES_PASSWORD=rvtools
+      - APP_MAPPING_CSV=/app/tools/app_mapping.example.csv
+    command: ["rq", "worker", "--url", "redis://redis:6379", "default"]
+    depends_on:
+      - redis
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: rvtools
+      POSTGRES_PASSWORD: rvtools
+      POSTGRES_DB: rvtools
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/rvtools_neo4j_2026
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
+  neo4jdata:
+  miniodata:

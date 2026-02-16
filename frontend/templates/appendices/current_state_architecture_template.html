@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Current State Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #1a1a1a; background: #fff; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; color: #0a4d7a; }
+  .sub { font-size: 11px; color: #5b6770; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .card { border: 1px solid #d7e2ea; border-radius: 6px; padding: 8px; background: #f9fcff; }
+  .label { font-size: 10px; color: #60717f; text-transform: uppercase; font-weight: 700; }
+  .value { font-size: 20px; color: #0a4d7a; font-weight: 800; margin-top: 2px; }
+  .section { margin-top: 12px; }
+  .section h2 { font-size: 13px; color: #0a4d7a; margin-bottom: 6px; border-left: 3px solid #0a6aa1; padding-left: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #0a6aa1; color: #fff; font-size: 10px; padding: 6px; text-align: left; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; }
+  tr:nth-child(even) { background: #f7fbff; }
+  .stack { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .panel { border: 1px solid #d7e2ea; border-radius: 6px; padding: 8px; }
+  .pill { display: inline-block; font-size: 9px; padding: 3px 6px; border-radius: 999px; background: #eaf4fb; border: 1px solid #c7e0ef; margin-right: 6px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <h1>Current State Architecture</h1>
+  <div class="sub">Generated {{ generation_date }} | Snapshot-based representation from uploaded RVTools data</div>
+
+  <div class="grid">
+    <div class="card"><div class="label">VMs</div><div class="value">{{ total_vms }}</div></div>
+    <div class="card"><div class="label">Hosts</div><div class="value">{{ total_hosts }}</div></div>
+    <div class="card"><div class="label">vCPU</div><div class="value">{{ total_compute }}</div></div>
+    <div class="card"><div class="label">Memory</div><div class="value" style="font-size:16px;">{{ total_memory }}</div></div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="label" style="margin-bottom:6px;">Consolidation Baseline</div>
+      <div class="pill">VM/Host: {{ consolidation.vm_per_host if consolidation else 0 }}</div>
+      <div class="pill">vCPU:pCPU: {{ consolidation.vcpu_pcpu_ratio if consolidation else 0 }}x</div>
+      <div class="pill">vMem:pMem: {{ consolidation.vmem_pmem_ratio if consolidation else 0 }}x</div>
+      <div class="pill">Exec Score: {{ executive_score }}/100</div>
+    </div>
+    <div class="panel">
+      <div class="label" style="margin-bottom:6px;">Lifecycle Risk</div>
+      <div class="pill">EOS VMs: {{ lifecycle.eos_risk_vms if lifecycle else 0 }}</div>
+      <div class="pill">EOS %: {{ lifecycle.eos_risk_pct if lifecycle else 0 }}</div>
+      <div class="pill">Template %: {{ lifecycle.template_pct if lifecycle else 0 }}</div>
+      <div class="pill">Powered Off %: {{ executive_components.powered_off_pct if executive_components else 0 }}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Cluster Density</h2>
+    <table>
+      <tr><th>Cluster</th><th>VMs</th><th>Hosts</th><th>VM/Host</th></tr>
+      {% if top_clusters %}
+        {% for c in top_clusters %}
+        <tr>
+          <td>{{ c.cluster }}</td>
+          <td>{{ c.vms }}</td>
+          <td>{{ c.hosts }}</td>
+          <td>{{ c.vm_per_host }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="4">Cluster-level data not available in this snapshot.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Architecture Insights</h2>
+    <table>
+      <tr><th>Insight</th></tr>
+      {% if insights %}
+        {% for i in insights %}
+        <tr><td>{{ i }}</td></tr>
+        {% endfor %}
+      {% else %}
+        <tr><td>No key insights generated for this snapshot.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</body>
+</html>

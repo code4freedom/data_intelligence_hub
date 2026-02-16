@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vSphere Estate - Platform Health</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #151515; background: #fff; padding: 24px; }
+  h1 { font-size: 20px; color: #0d4c79; margin-bottom: 4px; }
+  .sub { font-size: 11px; color: #5f6d76; margin-bottom: 12px; }
+  .score { border: 1px solid #cfe0eb; border-radius: 8px; padding: 10px; background: #f8fcff; margin-bottom: 10px; }
+  .score .n { font-size: 28px; color: #0d4c79; font-weight: 800; line-height: 1; }
+  .score .t { font-size: 10px; color: #6a7782; text-transform: uppercase; font-weight: 700; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .panel { border: 1px solid #d8e3ec; border-radius: 6px; padding: 10px; background: #fff; }
+  .panel h2 { font-size: 12px; color: #0d4c79; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #0a6aa1; color: #fff; font-size: 10px; text-align: left; padding: 6px; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e7eef3; }
+  tr:nth-child(even) { background: #f7fbff; }
+</style>
+</head>
+<body>
+  <h1>vSphere Estate - Platform Health</h1>
+  <div class="sub">Operational health and risk analytics from the latest RVTools ingest</div>
+
+  <div class="score">
+    <div class="n">{{ operational_scorecard.risk_score if operational_scorecard else 0 }}</div>
+    <div class="t">Overall Health Score (higher is better)</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Scorecard</h2>
+      <table>
+        <tr><th>Dimension</th><th>Score</th></tr>
+        <tr><td>Risk</td><td>{{ operational_scorecard.risk_score if operational_scorecard else 0 }}</td></tr>
+        <tr><td>Efficiency</td><td>{{ operational_scorecard.efficiency_score if operational_scorecard else 0 }}</td></tr>
+        <tr><td>Lifecycle</td><td>{{ operational_scorecard.lifecycle_score if operational_scorecard else 0 }}</td></tr>
+        <tr><td>Growth Hygiene</td><td>{{ operational_scorecard.growth_hygiene_score if operational_scorecard else 0 }}</td></tr>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Storage and Sizing Efficiency</h2>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Storage Overprovision Ratio</td><td>{{ storage_efficiency.overprovision_ratio if storage_efficiency else 0 }}x</td></tr>
+        <tr><td>Estimated Reclaim vCPU</td><td>{{ storage_efficiency.estimated_reclaim_vcpu if storage_efficiency else 0 }}</td></tr>
+        <tr><td>Estimated Reclaim Memory (GB)</td><td>{{ storage_efficiency.estimated_reclaim_memory_gb if storage_efficiency else 0 }}</td></tr>
+        <tr><td>Right-size Candidates</td><td>{{ performance.right_size_candidates if performance else 0 }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:10px;">
+    <div class="panel">
+      <h2>Anomaly Events</h2>
+      <table>
+        <tr><th>Ingest</th><th>VMs</th><th>Hosts</th><th>EOS VMs</th></tr>
+        {% if anomalies and anomalies.events %}
+          {% for a in anomalies.events %}
+          <tr>
+            <td>{{ a.ingest_id }}</td>
+            <td>{{ a.total_vms }}</td>
+            <td>{{ a.total_hosts }}</td>
+            <td>{{ a.eos_risk_vms }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="4">No anomalies identified from available history.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Lifecycle Prioritization (Top EOS)</h2>
+      <table>
+        <tr><th>VM</th><th>OS</th><th>Priority Score</th></tr>
+        {% if eos_prioritization %}
+          {% for e in eos_prioritization[:20] %}
+          <tr>
+            <td>{{ e.vm }}</td>
+            <td>{{ e.os }}</td>
+            <td>{{ e.priority_score }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="3">No EOS-priority list generated.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+</body>
+</html>

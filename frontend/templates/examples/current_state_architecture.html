@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MBB Infrastructure - Platform Stack Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #FFFFFF;
+    color: #1A1A2E;
+    padding: 28px 36px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #0D47A1;
+  }
+  .header-left h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0D1B2A;
+    letter-spacing: 0.2px;
+  }
+  .header-left p {
+    font-size: 10px;
+    color: #6B7B8D;
+    margin-top: 2px;
+  }
+  .header-stats {
+    display: flex;
+    gap: 20px;
+  }
+  .h-stat {
+    text-align: center;
+    padding: 0 12px;
+    border-left: 1px solid #D1D9E6;
+  }
+  .h-stat:first-child { border-left: none; }
+  .h-stat .n {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0D47A1;
+    line-height: 1.1;
+  }
+  .h-stat .l {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #6B7B8D;
+    font-weight: 600;
+  }
+
+  /* Layers */
+  .layer {
+    margin-bottom: 6px;
+  }
+  .layer-bar {
+    display: flex;
+    align-items: stretch;
+    border-radius: 4px;
+    overflow: hidden;
+    min-height: 38px;
+  }
+  .layer-title-box {
+    min-width: 155px;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .layer-title-box .layer-icon {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .layer-title-box .layer-icon svg {
+    width: 12px; height: 12px;
+    fill: white;
+  }
+  .layer-title-box .layer-title {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .layer-items-box {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 14px;
+  }
+  .layer-items-box .item {
+    font-size: 9px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Layer: Consumers */
+  .layer-consumers .layer-title-box { background: #546E7A; color: white; }
+  .layer-consumers .layer-items-box { background: #ECEFF1; }
+  .layer-consumers .item { background: #FFFFFF; color: #37474F; border: 1px solid #B0BEC5; }
+
+  /* Layer: Management */
+  .layer-mgmt .layer-title-box { background: #0D3B66; color: white; }
+  .layer-mgmt .layer-items-box { background: #0D47A1; }
+  .layer-mgmt .item { background: rgba(255,255,255,0.16); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.12); }
+
+  /* Layer: Operations */
+  .layer-ops .layer-title-box { background: #0A5A7C; color: white; }
+  .layer-ops .layer-items-box { background: #0277BD; }
+  .layer-ops .item { background: rgba(255,255,255,0.14); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.10); }
+
+  /* Layer: Automation */
+  .layer-auto .layer-title-box { background: #1A6D3A; color: white; }
+  .layer-auto .layer-items-box { background: #2E7D32; }
+  .layer-auto .item { background: rgba(255,255,255,0.16); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.10); }
+  .layer-auto .item.highlight { background: rgba(255,255,255,0.30); font-weight: 700; }
+
+  /* Layer: Networking */
+  .layer-net .layer-title-box { background: #004D40; color: white; }
+  .layer-net .layer-items-box { background: #00695C; }
+  .layer-net .item { background: rgba(255,255,255,0.14); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.10); }
+  .nsx-count {
+    display: inline-block;
+    font-size: 7px;
+    font-weight: 700;
+    background: rgba(255,255,255,0.3);
+    color: white;
+    padding: 1px 5px;
+    border-radius: 8px;
+    margin-left: 4px;
+  }
+
+  /* Separator */
+  .separator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 14px;
+  }
+  .separator-line { flex: 1; height: 1px; background: #CBD5E1; }
+  .separator-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #6B7B8D;
+    padding: 0 4px;
+  }
+
+  /* Platform Domains Grid */
+  .domains-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .domain-card {
+    border: 1.5px solid #D1D9E6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #FFFFFF;
+    display: flex;
+    flex-direction: column;
+  }
+  .domain-header {
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .domain-header svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .domain-body {
+    padding: 10px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* Domain colors */
+  .domain-webapp .domain-header { background: #0D47A1; }
+  .domain-db .domain-header { background: #1B5E20; }
+  .domain-cards .domain-header { background: #BF360C; }
+  .domain-vdi .domain-header { background: #006064; }
+  .domain-infra .domain-header { background: #37474F; }
+
+  /* Tech stack */
+  .tech-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .tech-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .tech-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .dot-vsphere { background: #0D47A1; }
+  .dot-nsx { background: #00695C; }
+  .dot-vsan { background: #E65100; }
+  .dot-nutanix { background: #6A1B9A; }
+  .dot-storage { background: #455A64; }
+  .dot-horizon { background: #006064; }
+  .dot-veeam { background: #00796B; }
+
+  .tech-label {
+    font-size: 8px;
+    color: #1A1A2E;
+    font-weight: 600;
+  }
+
+  /* Domain stats */
+  .domain-stats {
+    border-top: 1px solid #E8EDF2;
+    padding-top: 7px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+  }
+  .domain-stat {
+    font-size: 8px;
+    color: #6B7B8D;
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+  }
+  .domain-stat strong {
+    color: #1A1A2E;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* Additional workload row */
+  .domains-grid-secondary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 0;
+  }
+  .domain-card-sm {
+    border: 1.5px solid #D1D9E6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #FFFFFF;
+  }
+  .domain-card-sm .domain-header-sm {
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .domain-card-sm .domain-header-sm svg { width: 12px; height: 12px; }
+  .domain-card-sm .domain-body-sm {
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sm-stat {
+    font-size: 8px;
+    color: #6B7B8D;
+  }
+  .sm-stat strong {
+    color: #1A1A2E;
+    font-size: 10px;
+  }
+
+  .bg-exchange { background: #4A148C; }
+  .bg-m2u { background: #E65100; }
+  .bg-digital { background: #880E4F; }
+  .bg-monitoring { background: #263238; }
+  .bg-dr { background: #3E2723; }
+
+  /* Hardware Platform Layer */
+  .hw-layer {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    border: 1.5px solid #B0BEC5;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #FFFFFF;
+    margin-bottom: 0;
+  }
+  .hw-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .hw-section-header {
+    padding: 7px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hw-compute { background: #455A64; }
+  .hw-storage { background: #37474F; }
+  .hw-section-body {
+    padding: 12px 14px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    flex: 1;
+    align-items: center;
+  }
+  .hw-vendor {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .hw-vendor-logo {
+    width: 38px;
+    height: 22px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: 800;
+    color: #FFFFFF;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .hw-vendor-logo.hpe { background: #01A982; }
+  .hw-vendor-logo.dell { background: #007DB8; }
+  .hw-vendor-logo.cisco { background: #049FD9; }
+  .hw-vendor-logo.nutanix { background: #6A1B9A; }
+  .hw-vendor-logo.pure { background: #FE5000; }
+  .hw-vendor-logo.san { background: #546E7A; }
+  .hw-vendor-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: #1A1A2E;
+  }
+  .hw-divider {
+    width: 1.5px;
+    background: #B0BEC5;
+    flex-shrink: 0;
+  }
+
+  /* DC Footer */
+  .dc-footer {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 2px solid #0D47A1;
+  }
+  .dc-box {
+    border: 1.5px solid #D1D9E6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #FFFFFF;
+  }
+  .dc-box-header {
+    padding: 8px 12px;
+    background: #F0F4F8;
+    border-bottom: 1px solid #D1D9E6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dc-box-header .dc-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0D1B2A;
+  }
+  .dc-box-header .dc-role {
+    font-size: 8px;
+    color: #6B7B8D;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .dc-box-body {
+    padding: 10px 12px;
+  }
+  .dc-stats-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .dc-stat-item {
+    text-align: center;
+    flex: 1;
+  }
+  .dc-stat-item .n {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0D47A1;
+    line-height: 1.1;
+  }
+  .dc-stat-item .l {
+    font-size: 7px;
+    color: #6B7B8D;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  /* Version bar */
+  .ver-bar-container {
+    margin-top: 6px;
+  }
+  .ver-bar-label {
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #90A4AE;
+    margin-bottom: 3px;
+  }
+  .ver-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .ver-bar .v8 { background: #2E7D32; }
+  .ver-bar .v7 { background: #E65100; }
+  .ver-bar .v6 { background: #B71C1C; }
+  .ver-labels {
+    display: flex;
+    gap: 8px;
+    margin-top: 3px;
+  }
+  .ver-labels span {
+    font-size: 7px;
+    color: #6B7B8D;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .ver-labels .vdot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  /* NSX coverage bar */
+  .nsx-bar-row {
+    margin-top: 6px;
+  }
+  .nsx-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #E8EDF2;
+  }
+  .nsx-bar .nsx-fill { background: #00695C; }
+  .nsx-labels {
+    display: flex;
+    gap: 8px;
+    margin-top: 3px;
+  }
+  .nsx-labels span {
+    font-size: 7px;
+    color: #6B7B8D;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .nsx-labels .ndot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  /* Arrow connectors between layers */
+  .layer-connector {
+    display: flex;
+    justify-content: center;
+    height: 6px;
+    position: relative;
+  }
+  .layer-connector::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 100%;
+    background: #CBD5E1;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <h1>Maybank — Platform Stack Architecture</h1>
+    <p>Logical Infrastructure Overview · Management, Operations & Workload Domains</p>
+  </div>
+  <div class="header-stats">
+    <div class="h-stat"><div class="n">31</div><div class="l">vCenters</div></div>
+    <div class="h-stat"><div class="n">147</div><div class="l">Clusters</div></div>
+    <div class="h-stat"><div class="n">759</div><div class="l">ESXi Hosts</div></div>
+    <div class="h-stat"><div class="n">9,794</div><div class="l">VMs</div></div>
+  </div>
+</div>
+
+<!-- Consumer Layer -->
+<div class="layer layer-consumers">
+  <div class="layer-bar">
+    <div class="layer-title-box">
+      <div class="layer-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white"/></svg></div>
+      <div class="layer-title">Consumers</div>
+    </div>
+    <div class="layer-items-box">
+      <div class="item">LOB Applications</div>
+      <div class="item">Digital Banking</div>
+      <div class="item">Cards & Payments</div>
+      <div class="item">Mobile Banking (M2U)</div>
+      <div class="item">Exchange / Messaging</div>
+      <div class="item">VDI End Users</div>
+      <div class="item">Development Teams</div>
+      <div class="item">SRE / Platform Eng</div>
+    </div>
+  </div>
+</div>
+
+<div class="layer-connector"></div>
+
+<!-- Management Plane -->
+<div class="layer layer-mgmt">
+  <div class="layer-bar">
+    <div class="layer-title-box">
+      <div class="layer-icon"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z" fill="white"/></svg></div>
+      <div class="layer-title">Management Plane</div>
+    </div>
+    <div class="layer-items-box">
+      <div class="item">31 × vCenter Server</div>
+      <div class="item">NSX Manager</div>
+      <div class="item">VMware Horizon</div>
+      <div class="item">Citrix Virtual Apps & Desktops</div>
+      <div class="item">Veeam Backup & Replication</div>
+      <div class="item">Zerto DR Orchestration</div>
+    </div>
+  </div>
+</div>
+
+<div class="layer-connector"></div>
+
+<!-- Automation Layer -->
+<div class="layer layer-auto">
+  <div class="layer-bar">
+    <div class="layer-title-box">
+      <div class="layer-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></div>
+      <div class="layer-title">Automation</div>
+    </div>
+    <div class="layer-items-box">
+      <div class="item highlight">Terraform / IaC</div>
+      <div class="item">Ansible Playbooks</div>
+      <div class="item">PowerCLI Scripts</div>
+      <div class="item">CI/CD Pipelines</div>
+    </div>
+  </div>
+</div>
+
+<div class="layer-connector"></div>
+
+<!-- Operations Layer -->
+<div class="layer layer-ops">
+  <div class="layer-bar">
+    <div class="layer-title-box">
+      <div class="layer-icon"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div class="layer-title">Operations</div>
+    </div>
+    <div class="layer-items-box">
+      <div class="item">VMware Aria Operations</div>
+      <div class="item">Aria Operations for Logs</div>
+      <div class="item">Monitoring & Alerting</div>
+      <div class="item">Splunk / ELK Analytics</div>
+      <div class="item">Capacity Planning</div>
+      <div class="item">Data Protection</div>
+      <div class="item">Security & Compliance</div>
+      <div class="item">Asset Management</div>
+      <div class="item">Log Management</div>
+    </div>
+  </div>
+</div>
+
+<div class="layer-connector"></div>
+
+<!-- Networking Layer -->
+<div class="layer layer-net">
+  <div class="layer-bar">
+    <div class="layer-title-box">
+      <div class="layer-icon"><svg viewBox="0 0 24 24"><path d="M4 12l4-4v3h8V8l4 4-4 4v-3H8v3z" fill="white"/></svg></div>
+      <div class="layer-title">Network</div>
+    </div>
+    <div class="layer-items-box">
+      <div class="item">NSX-T Micro-segmentation <span class="nsx-count">249 hosts</span></div>
+      <div class="item">Physical Switching</div>
+      <div class="item">Distributed Firewall</div>
+      <div class="item">AVI Load Balancer</div>
+    </div>
+  </div>
+</div>
+
+<!-- Workload Domains separator -->
+<div class="separator">
+  <div class="separator-line"></div>
+  <div class="separator-label">Workload Domains</div>
+  <div class="separator-line"></div>
+</div>
+
+<!-- Primary Workload Domains -->
+<div class="domains-grid">
+
+  <!-- Web Applications -->
+  <div class="domain-card domain-webapp">
+    <div class="domain-header">
+      <svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" fill="none" stroke="white" stroke-width="2"/></svg>
+      Web Applications
+    </div>
+    <div class="domain-body">
+      <div class="tech-stack">
+        <div class="tech-row"><div class="tech-dot dot-vsphere"></div><span class="tech-label">vSphere 7.x / 8.x</span></div>
+        <div class="tech-row"><div class="tech-dot dot-nsx"></div><span class="tech-label">NSX Micro-segmentation</span></div>
+        <div class="tech-row"><div class="tech-dot dot-storage"></div><span class="tech-label">Weblogic, Tomcat Farms</span></div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat"><strong>14</strong> clusters</div>
+        <div class="domain-stat"><strong>64</strong> hosts</div>
+        <div class="domain-stat"><strong>1,167</strong> VMs</div>
+        <div class="domain-stat"><strong>NSX</strong> enabled</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database -->
+  <div class="domain-card domain-db">
+    <div class="domain-header">
+      <svg viewBox="0 0 24 24" fill="white"><ellipse cx="12" cy="5" rx="9" ry="3" fill="none" stroke="white" stroke-width="2"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" fill="none" stroke="white" stroke-width="2"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" fill="none" stroke="white" stroke-width="2"/></svg>
+      Database
+    </div>
+    <div class="domain-body">
+      <div class="tech-stack">
+        <div class="tech-row"><div class="tech-dot dot-vsphere"></div><span class="tech-label">vSphere 6.7 / 7.x / 8.x</span></div>
+        <div class="tech-row"><div class="tech-dot dot-nutanix"></div><span class="tech-label">Nutanix HCI (legacy)</span></div>
+        <div class="tech-row"><div class="tech-dot dot-storage"></div><span class="tech-label">MSSQL, Oracle RAC</span></div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat"><strong>12</strong> clusters</div>
+        <div class="domain-stat"><strong>73</strong> hosts</div>
+        <div class="domain-stat"><strong>639</strong> VMs</div>
+        <div class="domain-stat"><strong>Mixed</strong> storage</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards & Payments -->
+  <div class="domain-card domain-cards">
+    <div class="domain-header">
+      <svg viewBox="0 0 24 24" fill="white"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="white" stroke-width="2"/><line x1="2" y1="10" x2="22" y2="10" stroke="white" stroke-width="2"/></svg>
+      Cards & Payments
+    </div>
+    <div class="domain-body">
+      <div class="tech-stack">
+        <div class="tech-row"><div class="tech-dot dot-vsphere"></div><span class="tech-label">vSphere 7.x / 8.x</span></div>
+        <div class="tech-row"><div class="tech-dot dot-nutanix"></div><span class="tech-label">Nutanix (NTNX_CARDS)</span></div>
+        <div class="tech-row"><div class="tech-dot dot-storage"></div><span class="tech-label">Regional & Core Processing</span></div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat"><strong>13</strong> clusters</div>
+        <div class="domain-stat"><strong>48</strong> hosts</div>
+        <div class="domain-stat"><strong>499</strong> VMs</div>
+        <div class="domain-stat"><strong>v8.x</strong> primary</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VDI / Workspace -->
+  <div class="domain-card domain-vdi">
+    <div class="domain-header">
+      <svg viewBox="0 0 24 24" fill="white"><rect x="4" y="3" width="16" height="12" rx="1" fill="none" stroke="white" stroke-width="2"/><line x1="8" y1="19" x2="16" y2="19" stroke="white" stroke-width="2"/><line x1="12" y1="15" x2="12" y2="19" stroke="white" stroke-width="2"/></svg>
+      VDI / Workspace
+    </div>
+    <div class="domain-body">
+      <div class="tech-stack">
+        <div class="tech-row"><div class="tech-dot dot-vsphere"></div><span class="tech-label">vSphere 8.0.3 (100%)</span></div>
+        <div class="tech-row"><div class="tech-dot dot-nsx"></div><span class="tech-label">NSX Full Coverage</span></div>
+        <div class="tech-row"><div class="tech-dot dot-horizon"></div><span class="tech-label">VMware Horizon VDI</span></div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat"><strong>29</strong> clusters</div>
+        <div class="domain-stat"><strong>174</strong> hosts</div>
+        <div class="domain-stat"><strong>3,570</strong> VMs</div>
+        <div class="domain-stat"><strong>100%</strong> NSX</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Infrastructure Services -->
+  <div class="domain-card domain-infra">
+    <div class="domain-header">
+      <svg viewBox="0 0 24 24" fill="white"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="none" stroke="white" stroke-width="2"/><path d="M2 17l10 5 10-5" fill="none" stroke="white" stroke-width="2"/><path d="M2 12l10 5 10-5" fill="none" stroke="white" stroke-width="2"/></svg>
+      Infrastructure Svcs
+    </div>
+    <div class="domain-body">
+      <div class="tech-stack">
+        <div class="tech-row"><div class="tech-dot dot-vsphere"></div><span class="tech-label">vSphere 7.x / 8.x</span></div>
+        <div class="tech-row"><div class="tech-dot dot-veeam"></div><span class="tech-label">Veeam, Zerto DR</span></div>
+        <div class="tech-row"><div class="tech-dot dot-storage"></div><span class="tech-label">Mgmt, Edge, DPS, GPU</span></div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat"><strong>46</strong> clusters</div>
+        <div class="domain-stat"><strong>181</strong> hosts</div>
+        <div class="domain-stat"><strong>2,099</strong> VMs</div>
+        <div class="domain-stat"><strong>Mixed</strong> ver.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Secondary Workload Domains -->
+<div class="domains-grid-secondary">
+  <div class="domain-card-sm">
+    <div class="domain-header-sm bg-exchange">
+      <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+      Exchange
+    </div>
+    <div class="domain-body-sm">
+      <div class="sm-stat"><strong>8</strong> clusters</div>
+      <div class="sm-stat"><strong>69</strong> hosts</div>
+      <div class="sm-stat"><strong>296</strong> VMs</div>
+    </div>
+  </div>
+
+  <div class="domain-card-sm">
+    <div class="domain-header-sm bg-m2u">
+      <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="white" stroke-width="2"/><circle cx="12" cy="18" r="1" fill="white"/></svg>
+      M2U Mobile Banking
+    </div>
+    <div class="domain-body-sm">
+      <div class="sm-stat"><strong>10</strong> clusters</div>
+      <div class="sm-stat"><strong>62</strong> hosts</div>
+      <div class="sm-stat"><strong>426</strong> VMs</div>
+    </div>
+  </div>
+
+  <div class="domain-card-sm">
+    <div class="domain-header-sm bg-digital">
+      <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
+      Digital Platform
+    </div>
+    <div class="domain-body-sm">
+      <div class="sm-stat"><strong>8</strong> clusters</div>
+      <div class="sm-stat"><strong>36</strong> hosts</div>
+      <div class="sm-stat"><strong>788</strong> VMs</div>
+    </div>
+  </div>
+
+  <div class="domain-card-sm">
+    <div class="domain-header-sm bg-monitoring">
+      <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+      Monitoring / Analytics
+    </div>
+    <div class="domain-body-sm">
+      <div class="sm-stat"><strong>3</strong> clusters</div>
+      <div class="sm-stat"><strong>24</strong> hosts</div>
+      <div class="sm-stat"><strong>103</strong> VMs</div>
+    </div>
+  </div>
+
+  <div class="domain-card-sm">
+    <div class="domain-header-sm bg-dr">
+      <svg viewBox="0 0 24 24" fill="white" width="12" height="12"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+      DR / Zerto
+    </div>
+    <div class="domain-body-sm">
+      <div class="sm-stat"><strong>4</strong> clusters</div>
+      <div class="sm-stat"><strong>28</strong> hosts</div>
+      <div class="sm-stat"><strong>207</strong> VMs</div>
+    </div>
+  </div>
+</div>
+
+<!-- x86 Platform & Storage Layer -->
+<div class="separator" style="margin-top:14px;">
+  <div class="separator-line"></div>
+  <div class="separator-label">x86 Platform & Storage</div>
+  <div class="separator-line"></div>
+</div>
+
+<div class="hw-layer">
+  <div class="hw-section">
+    <div class="hw-section-header hw-compute">
+      <svg viewBox="0 0 24 24" fill="white" width="14" height="14"><rect x="2" y="6" width="20" height="4" rx="1" fill="none" stroke="white" stroke-width="2"/><rect x="2" y="14" width="20" height="4" rx="1" fill="none" stroke="white" stroke-width="2"/><circle cx="18" cy="8" r="1" fill="white"/><circle cx="18" cy="16" r="1" fill="white"/></svg>
+      Compute (x86 Servers)
+    </div>
+    <div class="hw-section-body">
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo hpe">HPE</div>
+        <div class="hw-vendor-label">ProLiant / Synergy</div>
+      </div>
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo dell">DELL</div>
+        <div class="hw-vendor-label">PowerEdge</div>
+      </div>
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo cisco">CISCO</div>
+        <div class="hw-vendor-label">UCS</div>
+      </div>
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo nutanix">NTNX</div>
+        <div class="hw-vendor-label">Nutanix HCI</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hw-divider"></div>
+
+  <div class="hw-section">
+    <div class="hw-section-header hw-storage">
+      <svg viewBox="0 0 24 24" fill="white" width="14" height="14"><ellipse cx="12" cy="5" rx="9" ry="3" fill="none" stroke="white" stroke-width="2"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" fill="none" stroke="white" stroke-width="2"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" fill="none" stroke="white" stroke-width="2"/></svg>
+      Storage
+    </div>
+    <div class="hw-section-body">
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo nutanix">NTNX</div>
+        <div class="hw-vendor-label">Nutanix AOS</div>
+      </div>
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo pure">PURE</div>
+        <div class="hw-vendor-label">Pure Storage</div>
+      </div>
+      <div class="hw-vendor">
+        <div class="hw-vendor-logo san">SAN</div>
+        <div class="hw-vendor-label">FC / iSCSI SAN</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DC Footer -->
+<div class="dc-footer">
+  <!-- CBJDC -->
+  <div class="dc-box">
+    <div class="dc-box-header">
+      <div class="dc-name">CBJDC — Cyberjaya</div>
+      <div class="dc-role">Primary</div>
+    </div>
+    <div class="dc-box-body">
+      <div class="dc-stats-row">
+        <div class="dc-stat-item"><div class="n">4</div><div class="l">vCenters</div></div>
+        <div class="dc-stat-item"><div class="n">57</div><div class="l">Clusters</div></div>
+        <div class="dc-stat-item"><div class="n">280</div><div class="l">Hosts</div></div>
+        <div class="dc-stat-item"><div class="n">2.7K</div><div class="l">VMs</div></div>
+      </div>
+      <div class="ver-bar-container">
+        <div class="ver-bar-label">vSphere Version Mix</div>
+        <div class="ver-bar"><div class="v8" style="width:27%"></div><div class="v7" style="width:69%"></div><div class="v6" style="width:4%"></div></div>
+        <div class="ver-labels">
+          <span><span class="vdot" style="background:#2E7D32;"></span>v8.x 27%</span>
+          <span><span class="vdot" style="background:#E65100;"></span>v7.x 69%</span>
+          <span><span class="vdot" style="background:#B71C1C;"></span>v6.x 4%</span>
+        </div>
+      </div>
+      <div class="nsx-bar-row">
+        <div class="ver-bar-label">NSX Coverage</div>
+        <div class="nsx-bar"><div class="nsx-fill" style="width:14%"></div></div>
+        <div class="nsx-labels">
+          <span><span class="ndot" style="background:#00695C;"></span>NSX 14%</span>
+          <span><span class="ndot" style="background:#E8EDF2;"></span>Non-NSX 86%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PJDC/KLDC -->
+  <div class="dc-box">
+    <div class="dc-box-header">
+      <div class="dc-name">PJDC / KLDC — PJ & KL</div>
+      <div class="dc-role">Secondary</div>
+    </div>
+    <div class="dc-box-body">
+      <div class="dc-stats-row">
+        <div class="dc-stat-item"><div class="n">7</div><div class="l">vCenters</div></div>
+        <div class="dc-stat-item"><div class="n">66</div><div class="l">Clusters</div></div>
+        <div class="dc-stat-item"><div class="n">335</div><div class="l">Hosts</div></div>
+        <div class="dc-stat-item"><div class="n">4.0K</div><div class="l">VMs</div></div>
+      </div>
+      <div class="ver-bar-container">
+        <div class="ver-bar-label">vSphere Version Mix</div>
+        <div class="ver-bar"><div class="v8" style="width:44%"></div><div class="v7" style="width:47%"></div><div class="v6" style="width:9%"></div></div>
+        <div class="ver-labels">
+          <span><span class="vdot" style="background:#2E7D32;"></span>v8.x 44%</span>
+          <span><span class="vdot" style="background:#E65100;"></span>v7.x 47%</span>
+          <span><span class="vdot" style="background:#B71C1C;"></span>v6.x 9%</span>
+        </div>
+      </div>
+      <div class="nsx-bar-row">
+        <div class="ver-bar-label">NSX Coverage</div>
+        <div class="nsx-bar"><div class="nsx-fill" style="width:20%"></div></div>
+        <div class="nsx-labels">
+          <span><span class="ndot" style="background:#00695C;"></span>NSX 20%</span>
+          <span><span class="ndot" style="background:#E8EDF2;"></span>Non-NSX 80%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MWK -->
+  <div class="dc-box">
+    <div class="dc-box-header">
+      <div class="dc-name">MWK — Workspace</div>
+      <div class="dc-role">VDI Dual-Site</div>
+    </div>
+    <div class="dc-box-body">
+      <div class="dc-stats-row">
+        <div class="dc-stat-item"><div class="n">20</div><div class="l">vCenters</div></div>
+        <div class="dc-stat-item"><div class="n">12</div><div class="l">Clusters</div></div>
+        <div class="dc-stat-item"><div class="n">144</div><div class="l">Hosts</div></div>
+        <div class="dc-stat-item"><div class="n">3.2K</div><div class="l">VMs</div></div>
+      </div>
+      <div class="ver-bar-container">
+        <div class="ver-bar-label">vSphere Version Mix</div>
+        <div class="ver-bar"><div class="v8" style="width:100%"></div></div>
+        <div class="ver-labels">
+          <span><span class="vdot" style="background:#2E7D32;"></span>v8.x 100%</span>
+        </div>
+      </div>
+      <div class="nsx-bar-row">
+        <div class="ver-bar-label">NSX Coverage</div>
+        <div class="nsx-bar"><div class="nsx-fill" style="width:100%"></div></div>
+        <div class="nsx-labels">
+          <span><span class="ndot" style="background:#00695C;"></span>NSX 100%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

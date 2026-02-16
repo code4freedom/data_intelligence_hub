@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Application Landscape</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #171717; background: #fff; padding: 24px; }
+  h1 { font-size: 20px; color: #0c4f7d; margin-bottom: 4px; }
+  .sub { font-size: 11px; color: #62707a; margin-bottom: 12px; }
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .card { border: 1px solid #d7e3ec; border-radius: 6px; padding: 8px; background: #f9fcff; }
+  .card .l { font-size: 9px; color: #6a7883; text-transform: uppercase; font-weight: 700; }
+  .card .v { font-size: 18px; color: #0c4f7d; font-weight: 800; margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .panel { border: 1px solid #d7e3ec; border-radius: 6px; padding: 10px; background: #fff; }
+  .panel h2 { font-size: 12px; color: #0c4f7d; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #0a6aa1; color: #fff; font-size: 10px; padding: 6px; text-align: left; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; }
+  tr:nth-child(even) { background: #f7fbff; }
+  .foot { margin-top: 10px; font-size: 9px; color: #6b7780; }
+</style>
+</head>
+<body>
+  <h1>Application Landscape</h1>
+  <div class="sub">Derived from VM naming patterns + optional project app mapping file</div>
+
+  <div class="summary">
+    <div class="card"><div class="l">Total VMs</div><div class="v">{{ total_vms }}</div></div>
+    <div class="card"><div class="l">Mapped by Rules</div><div class="v">{{ application.mapped_count if application else 0 }}</div></div>
+    <div class="card"><div class="l">Heuristic Classified</div><div class="v">{{ application.heuristic_count if application else 0 }}</div></div>
+    <div class="card"><div class="l">Coverage %</div><div class="v">{{ application.mapping_coverage_pct if application else 0 }}</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Top Application Groups</h2>
+      <table>
+        <tr><th>Application</th><th>VM Count</th></tr>
+        {% if application and application.top_app_groups %}
+          {% for a in application.top_app_groups %}
+          <tr><td>{{ a.application }}</td><td>{{ a.vm_count }}</td></tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="2">No application grouping available.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Owner Distribution</h2>
+      <table>
+        <tr><th>Owner</th><th>VM Count</th></tr>
+        {% if application and application.owner_distribution_top %}
+          {% for owner, count in application.owner_distribution_top.items() %}
+          <tr><td>{{ owner }}</td><td>{{ count }}</td></tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="2">No owner metadata found in mapping file.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:10px;">
+    <div class="panel">
+      <h2>Criticality Distribution</h2>
+      <table>
+        <tr><th>Criticality</th><th>VM Count</th></tr>
+        {% if application and application.criticality_distribution %}
+          {% for crit, count in application.criticality_distribution.items() %}
+          <tr><td>{{ crit }}</td><td>{{ count }}</td></tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="2">No criticality metadata found in mapping file.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Dependency Signals (Co-location)</h2>
+      <table>
+        <tr><th>Source App</th><th>Target App</th><th>Weight</th></tr>
+        {% if dependency_graph and dependency_graph.edges %}
+          {% for e in dependency_graph.edges %}
+          <tr>
+            <td>{{ e.source }}</td>
+            <td>{{ e.target }}</td>
+            <td>{{ e.weight }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="3">No dependency edges generated from current snapshot.</td></tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <div class="foot">
+    Mapping source:
+    {% if application and application.mapping_source %}
+      {{ application.mapping_source }}
+    {% else %}
+      Not configured (heuristics only)
+    {% endif %}
+  </div>
+</body>
+</html>

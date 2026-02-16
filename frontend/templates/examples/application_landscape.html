@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maybank — Key Applications & Infrastructure</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #FFFFFF;
+    color: #1A1A2E;
+    padding: 28px 36px;
+  }
+
+  /* Header */
+  .header {
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid #0D47A1;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0D1B2A;
+  }
+  .header p {
+    font-size: 11px;
+    color: #6B7B8D;
+    margin-top: 2px;
+  }
+
+  /* Row layout */
+  .stack-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #E0E7EE;
+    min-height: 52px;
+  }
+  .stack-row:last-child {
+    border-bottom: none;
+  }
+
+  /* Category label */
+  .row-label {
+    width: 150px;
+    flex-shrink: 0;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #FFFFFF;
+    line-height: 1.3;
+  }
+
+  /* Row content */
+  .row-content {
+    flex: 1;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Vendor/App chip */
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    background: #F5F7FA;
+    border: 1px solid #E0E7EE;
+    border-radius: 4px;
+    white-space: nowrap;
+    transition: box-shadow 0.15s;
+  }
+  .chip:hover {
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .chip-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    font-weight: 800;
+    color: #FFFFFF;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+  }
+  .chip-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #1A1A2E;
+  }
+  .chip-sub {
+    font-size: 8px;
+    color: #6B7B8D;
+    font-weight: 400;
+  }
+
+  /* Category colors */
+  .cat-apps { background: #0D47A1; }
+  .cat-channels { background: #1565C0; }
+  .cat-middleware { background: #0277BD; }
+  .cat-mgmt { background: #0D3B66; }
+  .cat-auto { background: #1A6D3A; }
+  .cat-ops { background: #0A5A7C; }
+  .cat-security { background: #4A148C; }
+  .cat-network { background: #00695C; }
+  .cat-compute { background: #455A64; }
+  .cat-storage { background: #37474F; }
+  .cat-virt { background: #1B5E20; }
+  .cat-db { background: #BF360C; }
+
+  /* Chip icon colors */
+  .ic-blue { background: #0D47A1; }
+  .ic-teal { background: #00695C; }
+  .ic-green { background: #2E7D32; }
+  .ic-orange { background: #E65100; }
+  .ic-red { background: #B71C1C; }
+  .ic-purple { background: #6A1B9A; }
+  .ic-dark { background: #263238; }
+  .ic-grey { background: #546E7A; }
+  .ic-cyan { background: #00838F; }
+  .ic-pink { background: #AD1457; }
+  .ic-amber { background: #FF8F00; }
+  .ic-indigo { background: #283593; }
+  .ic-brown { background: #4E342E; }
+  .ic-lime { background: #558B2F; }
+
+  /* Vendor-specific colors */
+  .ic-vmware { background: #696969; }
+  .ic-hpe { background: #01A982; }
+  .ic-dell { background: #007DB8; }
+  .ic-cisco { background: #049FD9; }
+  .ic-nutanix { background: #6A1B9A; }
+  .ic-pure { background: #FE5000; }
+  .ic-veeam { background: #00B336; }
+  .ic-zerto { background: #E8382E; }
+  .ic-nsx { background: #007C89; }
+  .ic-aria { background: #0073E6; }
+  .ic-splunk { background: #65A637; }
+  .ic-terraform { background: #7B42BC; }
+  .ic-ansible { background: #EE0000; }
+  .ic-horizon { background: #0091DA; }
+  .ic-citrix { background: #452170; }
+  .ic-avi { background: #2B9F3E; }
+  .ic-oracle { background: #F80000; }
+  .ic-mssql { background: #CC2927; }
+  .ic-azure { background: #0078D4; }
+  .ic-palo { background: #FA582D; }
+  .ic-redhat { background: #EE0000; }
+
+  /* Category colors */
+  .cat-container { background: #C62828; }
+
+  /* Separator between major sections */
+  .section-gap {
+    height: 12px;
+    background: #FFFFFF;
+    border-bottom: 2px solid #D1D9E6;
+    margin-bottom: 0;
+  }
+
+  /* Footer note */
+  .footer-note {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid #E0E7EE;
+    font-size: 9px;
+    color: #90A4AE;
+    text-align: center;
+  }
+
+  /* Group divider inside row */
+  .row-divider {
+    width: 1px;
+    height: 28px;
+    background: #CBD5E1;
+    flex-shrink: 0;
+    margin: 0 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Maybank — Key Applications & Infrastructure</h1>
+  <p>Current State — Application Landscape & Technology Stack</p>
+</div>
+
+<!-- ===================== APPLICATIONS SECTION ===================== -->
+
+<!-- Core Banking -->
+<div class="stack-row">
+  <div class="row-label cat-apps">Core Banking<br>Systems</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-blue">CB</div>
+      <div><div class="chip-label">Core Banking</div><div class="chip-sub">Core Ledger</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-indigo">CMS</div>
+      <div><div class="chip-label">CMS / RCMS</div><div class="chip-sub">Card Management</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-teal">RBS</div>
+      <div><div class="chip-label">RBS</div><div class="chip-sub">Retail Banking</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-orange">CARD</div>
+      <div><div class="chip-label">Cards</div><div class="chip-sub">Cards Processing</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-dark">RMBP</div>
+      <div><div class="chip-label">RMBP</div><div class="chip-sub">Regional Platform</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-purple">TRSY</div>
+      <div><div class="chip-label">Treasury System</div><div class="chip-sub">Treasury & Markets</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-brown">ECOS</div>
+      <div><div class="chip-label">ECOS</div><div class="chip-sub">Enterprise COS</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Digital Channels -->
+<div class="stack-row">
+  <div class="row-label cat-channels">Digital<br>Channels</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-amber">M2U</div>
+      <div><div class="chip-label">Maybank2u</div><div class="chip-sub">Internet Banking</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-pink">MAE</div>
+      <div><div class="chip-label">MAE</div><div class="chip-sub">Mobile App</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-cyan">ATM</div>
+      <div><div class="chip-label">ATM</div><div class="chip-sub">Self-Service Terminal</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-green">OST</div>
+      <div><div class="chip-label">OST</div><div class="chip-sub">Online Stock Trading</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Middleware / Integration -->
+<div class="stack-row">
+  <div class="row-label cat-middleware">Middleware &<br>Integration</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-red">ESB</div>
+      <div><div class="chip-label">ESB</div><div class="chip-sub">Enterprise Service Bus</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-orange">WL</div>
+      <div><div class="chip-label">WebLogic</div><div class="chip-sub">App Server</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-grey">EXC</div>
+      <div><div class="chip-label">Exchange</div><div class="chip-sub">Messaging</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-dark">API</div>
+      <div><div class="chip-label">API Gateway</div><div class="chip-sub">Integration Layer</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="section-gap"></div>
+
+<!-- ===================== INFRASTRUCTURE SECTION ===================== -->
+
+<!-- Management Plane -->
+<div class="stack-row">
+  <div class="row-label cat-mgmt">Management<br>Plane</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-vmware">vC</div>
+      <div><div class="chip-label">vCenter Server</div><div class="chip-sub">31 instances</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-nsx">NSX</div>
+      <div><div class="chip-label">NSX Manager</div><div class="chip-sub">Micro-segmentation</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-horizon">HZN</div>
+      <div><div class="chip-label">VMware Horizon</div><div class="chip-sub">VDI Management</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-citrix">CTX</div>
+      <div><div class="chip-label">Citrix CVAD</div><div class="chip-sub">Virtual Apps & Desktops</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-veeam">VBR</div>
+      <div><div class="chip-label">Veeam B&R</div><div class="chip-sub">Backup & Replication</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-zerto">ZRT</div>
+      <div><div class="chip-label">Zerto</div><div class="chip-sub">DR Orchestration</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Automation -->
+<div class="stack-row">
+  <div class="row-label cat-auto">Automation &<br>IaC</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-terraform">TF</div>
+      <div><div class="chip-label">Terraform</div><div class="chip-sub">Infrastructure as Code</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-ansible">ANS</div>
+      <div><div class="chip-label">Ansible</div><div class="chip-sub">Playbooks</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-vmware">CLI</div>
+      <div><div class="chip-label">PowerCLI</div><div class="chip-sub">VMware Scripting</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-dark">CI</div>
+      <div><div class="chip-label">CI/CD Pipelines</div><div class="chip-sub">Deployment Automation</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Operations -->
+<div class="stack-row">
+  <div class="row-label cat-ops">Operations &<br>Monitoring</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-aria">ARIA</div>
+      <div><div class="chip-label">Aria Operations</div><div class="chip-sub">VMware Monitoring</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-aria">LOG</div>
+      <div><div class="chip-label">Aria Ops for Logs</div><div class="chip-sub">Log Analytics</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-splunk">SPL</div>
+      <div><div class="chip-label">Splunk</div><div class="chip-sub">SIEM & Analytics</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-lime">ELK</div>
+      <div><div class="chip-label">ELK Stack</div><div class="chip-sub">Search & Analytics</div></div>
+    </div>
+    <div class="row-divider"></div>
+    <div class="chip">
+      <div class="chip-icon ic-grey">CAP</div>
+      <div><div class="chip-label">Capacity Planning</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-grey">SEC</div>
+      <div><div class="chip-label">Security & Compliance</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Networking -->
+<div class="stack-row">
+  <div class="row-label cat-network">Network &<br>Security</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-nsx">NSX</div>
+      <div><div class="chip-label">NSX-T</div><div class="chip-sub">Micro-segmentation</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-nsx">DFW</div>
+      <div><div class="chip-label">Distributed Firewall</div><div class="chip-sub">NSX DFW</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-avi">AVI</div>
+      <div><div class="chip-label">AVI Load Balancer</div><div class="chip-sub">L4–L7 LB</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-cisco">CIS</div>
+      <div><div class="chip-label">Cisco</div><div class="chip-sub">Physical Switching</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-palo">PA</div>
+      <div><div class="chip-label">Palo Alto</div><div class="chip-sub">Next-Gen Firewall</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Container Platform -->
+<div class="stack-row">
+  <div class="row-label cat-container">Container<br>Platform</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-redhat">OCP</div>
+      <div><div class="chip-label">Red Hat OpenShift</div><div class="chip-sub">Container Platform</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="section-gap"></div>
+
+<!-- Virtualization -->
+<div class="stack-row">
+  <div class="row-label cat-virt">Virtualization<br>Platform</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-vmware">vS</div>
+      <div><div class="chip-label">VMware vSphere</div><div class="chip-sub">6.x / 7.x / 8.x</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-vmware">ESXi</div>
+      <div><div class="chip-label">ESXi Hosts</div><div class="chip-sub">759 hosts</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-nutanix">AHV</div>
+      <div><div class="chip-label">Nutanix AHV</div><div class="chip-sub">HCI Hypervisor</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Database Services -->
+<div class="stack-row">
+  <div class="row-label cat-db">Database<br>Services</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-oracle">ORA</div>
+      <div><div class="chip-label">Oracle RAC</div><div class="chip-sub">Enterprise DB</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-mssql">SQL</div>
+      <div><div class="chip-label">Microsoft SQL Server</div><div class="chip-sub">MSSQL Clusters</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Compute -->
+<div class="stack-row">
+  <div class="row-label cat-compute">Compute</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-hpe">HPE</div>
+      <div><div class="chip-label">HPE</div><div class="chip-sub">ProLiant / Synergy</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-dell">DELL</div>
+      <div><div class="chip-label">Dell</div><div class="chip-sub">PowerEdge</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-cisco">UCS</div>
+      <div><div class="chip-label">Cisco</div><div class="chip-sub">UCS Blade</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-nutanix">NX</div>
+      <div><div class="chip-label">Nutanix</div><div class="chip-sub">HCI Nodes</div></div>
+    </div>
+    <div class="row-divider"></div>
+    <div class="chip">
+      <div class="chip-icon ic-azure">AZ</div>
+      <div><div class="chip-label">Microsoft Azure</div><div class="chip-sub">Public Cloud</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Storage -->
+<div class="stack-row">
+  <div class="row-label cat-storage">Storage & Data<br>Protection</div>
+  <div class="row-content">
+    <div class="chip">
+      <div class="chip-icon ic-nutanix">AOS</div>
+      <div><div class="chip-label">Nutanix AOS</div><div class="chip-sub">Software-Defined Storage</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-pure">FA</div>
+      <div><div class="chip-label">Pure Storage</div><div class="chip-sub">FlashArray</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-grey">SAN</div>
+      <div><div class="chip-label">FC / iSCSI SAN</div><div class="chip-sub">Block Storage</div></div>
+    </div>
+    <div class="row-divider"></div>
+    <div class="chip">
+      <div class="chip-icon ic-veeam">VBR</div>
+      <div><div class="chip-label">Veeam</div><div class="chip-sub">Backup</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-zerto">ZRT</div>
+      <div><div class="chip-label">Zerto</div><div class="chip-sub">DR Replication</div></div>
+    </div>
+    <div class="chip">
+      <div class="chip-icon ic-dell">DPS</div>
+      <div><div class="chip-label">Dell DPS</div><div class="chip-sub">Data Protection</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer-note">
+  Maybank Infrastructure Estate — 31 vCenters · 147 Clusters · 759 ESXi Hosts · 9,794 VMs — Across CBJDC, PJDC/KLDC & MWK Data Centers
+</div>
+
+</body>
+</html>

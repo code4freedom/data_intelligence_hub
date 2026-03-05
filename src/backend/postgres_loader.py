@@ -1,13 +1,17 @@
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, Text
-from pathlib import Path
-import pandas as pd
+import json
+import logging
 import os
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData
+
+logger = logging.getLogger(__name__)
 
 
 def get_engine():
-    # default to docker-compose postgres service
     user = os.environ.get('POSTGRES_USER', 'rvtools')
-    pwd = os.environ.get('POSTGRES_PASSWORD', 'rvtools')
+    pwd = os.environ.get('POSTGRES_PASSWORD', '')
     host = os.environ.get('POSTGRES_HOST', 'postgres')
     db = os.environ.get('POSTGRES_DB', 'rvtools')
     port = os.environ.get('POSTGRES_PORT', '5432')
@@ -41,9 +45,9 @@ def load_manifest_into_postgres(manifest_path: str):
     e = get_engine()
     vms_tbl, hosts_tbl = ensure_tables(e)
 
-    # simple ingestion: for each chunk, read parquet and insert VM rows if sheet is vInfo
-    m = pd.read_json(str(p))
-    sheet = m.get('sheet')
+    # Read manifest JSON properly (was using pd.read_json which is incorrect for this format)
+    m = json.loads(p.read_text(encoding='utf-8'))
+    sheet = m.get('sheet', '')
     for ch in m.get('chunks', []):
         local = ch.get('local_path')
         if not local:
@@ -51,10 +55,13 @@ def load_manifest_into_postgres(manifest_path: str):
         pch = Path(local)
         if not pch.exists():
             continue
-        df = pd.read_parquet(pch)
-        # heuristics for vInfo rows
+        try:
+            df = pd.read_parquet(pch)
+        except Exception:
+            logger.exception("Failed to read parquet chunk %s", pch)
+            continue
+
         if sheet.lower().startswith('vinfo') or 'vm' in sheet.lower():
-            # normalize columns lower
             cols = {c.lower(): c for c in df.columns}
             name_col = cols.get('name') or cols.get('vmname')
             host_col = cols.get('host') or cols.get('hostname')
@@ -64,11 +71,11 @@ def load_manifest_into_postgres(manifest_path: str):
             records = []
             for _, r in df.iterrows():
                 records.append({
-                    'name': str(r[name_col]) if name_col in r and not pd.isna(r[name_col]) else None,
-                    'host': str(r[host_col]) if host_col in r and not pd.isna(r[host_col]) else None,
-                    'numcpu': int(r[cpu_col]) if cpu_col in r and not pd.isna(r[cpu_col]) else None,
-                    'memorymb': int(r[mem_col]) if mem_col in r and not pd.isna(r[mem_col]) else None,
-                    'vmtools': str(r[tools_col]) if tools_col in r and not pd.isna(r[tools_col]) else None,
+                    'name': str(r[name_col]) if name_col and name_col in r and not pd.isna(r[name_col]) else None,
+                    'host': str(r[host_col]) if host_col and host_col in r and not pd.isna(r[host_col]) else None,
+                    'numcpu': int(r[cpu_col]) if cpu_col and cpu_col in r and not pd.isna(r[cpu_col]) else None,
+                    'memorymb': int(r[mem_col]) if mem_col and mem_col in r and not pd.isna(r[mem_col]) else None,
+                    'vmtools': str(r[tools_col]) if tools_col and tools_col in r and not pd.isna(r[tools_col]) else None,
                 })
             if records:
                 pd.DataFrame(records).to_sql('vms', e, if_exists='append', index=False)
@@ -81,10 +88,10 @@ def load_manifest_into_postgres(manifest_path: str):
             records = []
             for _, r in df.iterrows():
                 records.append({
-                    'name': str(r[name_col]) if name_col in r and not pd.isna(r[name_col]) else None,
-                    'version': str(r[ver_col]) if ver_col in r and not pd.isna(r[ver_col]) else None,
-                    'cpu': int(r[cpu_col]) if cpu_col in r and not pd.isna(r[cpu_col]) else None,
-                    'memorymb': int(r[mem_col]) if mem_col in r and not pd.isna(r[mem_col]) else None,
+                    'name': str(r[name_col]) if name_col and name_col in r and not pd.isna(r[name_col]) else None,
+                    'version': str(r[ver_col]) if ver_col and ver_col in r and not pd.isna(r[ver_col]) else None,
+                    'cpu': int(r[cpu_col]) if cpu_col and cpu_col in r and not pd.isna(r[cpu_col]) else None,
+                    'memorymb': int(r[mem_col]) if mem_col and mem_col in r and not pd.isna(r[mem_col]) else None,
                 })
             if records:
                 pd.DataFrame(records).to_sql('hosts', e, if_exists='append', index=False)

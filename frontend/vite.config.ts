@@ -39,6 +39,10 @@ export default defineConfig({
       '/appendices': {
         target: apiProxyTarget,
         changeOrigin: true
+      },
+      '/report-profiles': {
+        target: apiProxyTarget,
+        changeOrigin: true
       }
     }
   },

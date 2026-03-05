@@ -57,6 +57,12 @@ interface AppendixItem {
   title: string
 }
 
+interface ReportProfile {
+  id: string
+  title: string
+  description?: string
+}
+
 interface AdvancedData {
   forecasting?: {
     days_to_threshold?: { vms_10000?: number | null; memory_tb_20?: number | null }
@@ -79,12 +85,14 @@ function Dashboard() {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [appendices, setAppendices] = useState<AppendixItem[]>([])
   const [selectedAppendices, setSelectedAppendices] = useState<string[]>([])
+  const [profiles, setProfiles] = useState<ReportProfile[]>([])
+  const [reportProfile, setReportProfile] = useState<string>('full')
   const [mappingFile, setMappingFile] = useState<File | null>(null)
   const [selectedManifest, setSelectedManifest] = useState<string>('')
   const [exporting, setExporting] = useState(false)
   const [exportFormat, setExportFormat] = useState<'pdf' | 'pptx' | 'both'>('pdf')
   const [ingesting, setIngesting] = useState(false)
-  const [sheetName, setSheetName] = useState<string>('vInfo')
+  const [sheetName, setSheetName] = useState<string>('vInfo,vHost')
   const [chunkSize, setChunkSize] = useState<number>(5000)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -148,6 +156,15 @@ function Dashboard() {
         setSelectedAppendices((prev) => (prev.length > 0 ? prev : list.map((a: AppendixItem) => a.id)))
       } catch {
         setAppendices([])
+      }
+
+      try {
+        const profRes = await axios.get('/report-profiles')
+        const list = profRes.data?.profiles || []
+        setProfiles(list)
+        setReportProfile((prev) => prev || (list[0]?.id ?? 'full'))
+      } catch {
+        setProfiles([])
       }
 
       setError(null)
@@ -272,6 +289,7 @@ function Dashboard() {
       formData.append('output_format', exportFormat)
       formData.append('project', selectedProject)
       formData.append('appendices', selectedAppendices.join(','))
+      formData.append('report_profile', reportProfile)
 
       const res = await axios.post('/export/create', formData, { responseType: 'blob' })
       const disposition = res.headers['content-disposition'] || ''
@@ -492,13 +510,14 @@ function Dashboard() {
             <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2"><Upload className="w-5 h-5 text-teal-600" />Upload + Parse (One Click)</h2>
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div>
-                <label className="block text-xs text-slate-600 mb-1">Sheet</label>
-                <input
-                  value={sheetName}
-                  onChange={(e) => setSheetName(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm"
-                />
-              </div>
+                  <label className="block text-xs text-slate-600 mb-1">Sheet(s)</label>
+                  <input
+                    value={sheetName}
+                    onChange={(e) => setSheetName(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Use comma-separated sheets, e.g. <code>vInfo,vHost</code> for hardware enrichment.</p>
+                </div>
               <div>
                 <label className="block text-xs text-slate-600 mb-1">Chunk Size</label>
                 <input
@@ -554,6 +573,15 @@ function Dashboard() {
                       Delete Dataset
                     </button>
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-700 mb-2">Report Profile</label>
+                  <select value={reportProfile} onChange={(e) => setReportProfile(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                    {profiles.length === 0 && <option value="full">Full Intelligence (Default)</option>}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-2">Export format</label>

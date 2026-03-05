@@ -163,6 +163,71 @@ def _load_manifest_df_chunks(manifest_path: Path, chunks_dir: Path) -> List[pd.D
     return frames
 
 
+def _norm_host_name(v: str) -> str:
+    s = str(v or "").strip().lower()
+    if not s or s == "nan":
+        return ""
+    s = s.split(".")[0]
+    s = re.sub(r"[^a-z0-9-]", "", s)
+    return s
+
+
+def _best_host_match(host_norm: str, candidates: List[str]) -> Optional[str]:
+    if not host_norm or not candidates:
+        return None
+    if host_norm in candidates:
+        return host_norm
+    # pick longest suffix/infix match to avoid tiny ambiguous tokens.
+    ranked = []
+    for c in candidates:
+        if not c:
+            continue
+        if host_norm.endswith(c) or c in host_norm:
+            ranked.append((len(c), c))
+    if not ranked:
+        return None
+    ranked.sort(reverse=True)
+    return ranked[0][1]
+
+
+def _load_related_sheet_df(manifests_dir: Path, chunks_dir: Path, ingest_id: str, sheet_name: str) -> pd.DataFrame:
+    target = None
+    direct = manifests_dir / f"manifest_{sheet_name}_{ingest_id}.json"
+    if direct.exists():
+        target = direct
+    else:
+        for p in manifests_dir.glob(f"manifest_*_{ingest_id}.json"):
+            try:
+                m = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if str(m.get("sheet", "")).strip().lower() == str(sheet_name).strip().lower():
+                target = p
+                break
+    if not target:
+        # Fallback to latest sheet snapshot when ingest-specific sheet is missing.
+        candidates: List[Path] = []
+        for p in manifests_dir.glob("manifest_*.json"):
+            try:
+                m = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if str(m.get("sheet", "")).strip().lower() == str(sheet_name).strip().lower():
+                candidates.append(p)
+        if candidates:
+            candidates.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            target = candidates[0]
+    if not target:
+        return pd.DataFrame()
+    frames = _load_manifest_df_chunks(target, chunks_dir)
+    if not frames:
+        return pd.DataFrame()
+    try:
+        return pd.concat(frames, ignore_index=True)
+    except Exception:
+        return pd.DataFrame()
+
+
 def compute_manifest_intelligence(
     manifest_path: str,
     manifests_dir: str,
@@ -356,6 +421,37 @@ def compute_manifest_intelligence(
     else:
         working["_off"] = False
 
+    # vHost enrichment for true host hardware/version when available.
+    vhost_df = _load_related_sheet_df(mdir, cdir, str(manifest.get("ingest_id", "")), "vHost")
+    host_enriched: Dict[str, Dict] = {}
+    if not vhost_df.empty:
+        vh_host_col = _find_col(vhost_df, ["Host", "Name", "ESX Name"])
+        vh_model_col = _find_col(vhost_df, ["Model", "Hardware Model", "Server Model"])
+        vh_ver_col = _find_col(vhost_df, ["Version", "ESX Version", "Host Version", "vSphere Version", "ESXi Version"])
+        vh_vendor_col = _find_col(vhost_df, ["Vendor", "Manufacturer"])
+        vh_cpu_model_col = _find_col(vhost_df, ["CPU Model", "Processor Model"])
+        vh_cpu_pkg_col = _find_col(vhost_df, ["Cpu Packages", "CPU Packages", "Sockets", "Cpu Sockets"])
+        vh_cpu_core_col = _find_col(vhost_df, ["Cpu Cores", "CPU Cores", "Cores"])
+        vh_mem_col = _find_col(vhost_df, ["Memory", "Memory Size", "MemoryGB", "Memory MB"])
+        if vh_host_col:
+            for _, r in vhost_df.iterrows():
+                host_name = str(r.get(vh_host_col, "")).strip()
+                if not host_name or host_name.lower() == "nan":
+                    continue
+                host_norm = _norm_host_name(host_name)
+                if not host_norm:
+                    continue
+                host_enriched[host_norm] = {
+                    "host_raw": host_name,
+                    "vendor": str(r.get(vh_vendor_col)).strip() if vh_vendor_col and str(r.get(vh_vendor_col)).strip() not in ("", "nan") else None,
+                    "model": str(r.get(vh_model_col)).strip() if vh_model_col and str(r.get(vh_model_col)).strip() not in ("", "nan") else None,
+                    "cpu_model": str(r.get(vh_cpu_model_col)).strip() if vh_cpu_model_col and str(r.get(vh_cpu_model_col)).strip() not in ("", "nan") else None,
+                    "version": str(r.get(vh_ver_col)).strip() if vh_ver_col and str(r.get(vh_ver_col)).strip() not in ("", "nan") else None,
+                    "cpu_packages": _to_num(pd.Series([r.get(vh_cpu_pkg_col)])).iloc[0] if vh_cpu_pkg_col else None,
+                    "cpu_cores": _to_num(pd.Series([r.get(vh_cpu_core_col)])).iloc[0] if vh_cpu_core_col else None,
+                    "memory_raw": _to_num(pd.Series([r.get(vh_mem_col)])).iloc[0] if vh_mem_col else None,
+                }
+
     host_group = working.groupby(["_root", "_cluster", "_host"], dropna=False)
     node_rows = []
     for (root_name, cluster_name, host_name), g in host_group:
@@ -366,9 +462,55 @@ def compute_manifest_intelligence(
         top_os = _mode_or_none(g[os_cfg_col]) if os_cfg_col else None
         ver = _safe_first(g[host_version_col]) if host_version_col else None
         model = _safe_first(g[host_model_col]) if host_model_col else None
-        hardware_details = f"Observed VM Allocation: {alloc_vcpu} vCPU / {alloc_mem_gb} GB"
+        host_norm = _norm_host_name(str(host_name))
+        enriched = None
+        if host_norm:
+            if host_norm in host_enriched:
+                enriched = host_enriched.get(host_norm)
+            else:
+                best = _best_host_match(host_norm, list(host_enriched.keys()))
+                if best:
+                    enriched = host_enriched.get(best)
+        if enriched:
+            vendor = enriched.get("vendor")
+            model = enriched.get("model") or model
+            cpu_model = enriched.get("cpu_model")
+            ver = enriched.get("version") or ver
+            pkg = enriched.get("cpu_packages")
+            cores = enriched.get("cpu_cores")
+            mem_raw = enriched.get("memory_raw")
+            mem_label = None
+            if mem_raw is not None and mem_raw > 0:
+                # vHost may expose MB or GB; infer MB when large values.
+                mem_gb = float(mem_raw) / 1024.0 if float(mem_raw) > 4096 else float(mem_raw)
+                mem_label = f"{round(mem_gb, 1)} GB"
+            hw_parts = []
+            if vendor:
+                hw_parts.append(str(vendor))
+            if pkg and pkg > 0:
+                hw_parts.append(f"{int(pkg)} socket(s)")
+            if cores and cores > 0:
+                hw_parts.append(f"{int(cores)} core(s)")
+            if mem_label:
+                hw_parts.append(mem_label)
+            if cpu_model:
+                hw_parts.append(str(cpu_model))
+            hardware_details = " | ".join(hw_parts) if hw_parts else ""
+            if model:
+                hardware_details = f"{model}" + (f" | {hardware_details}" if hardware_details else "")
+            if not hardware_details:
+                hardware_details = f"Observed VM Allocation: {alloc_vcpu} vCPU / {alloc_mem_gb} GB"
+        else:
+            hardware_details = f"Observed VM Allocation: {alloc_vcpu} vCPU / {alloc_mem_gb} GB"
         if model:
-            hardware_details = f"{model} | {hardware_details}"
+            if not hardware_details.startswith(str(model)):
+                hardware_details = f"{model} | {hardware_details}"
+        vendor_out = enriched.get("vendor") if enriched else None
+        cpu_model_out = enriched.get("cpu_model") if enriched else None
+        cores_out = int(cores) if enriched and cores and cores > 0 else None
+        host_ram_gb_out = None
+        if enriched and mem_raw is not None and float(mem_raw) > 0:
+            host_ram_gb_out = round(float(mem_raw) / 1024.0, 1) if float(mem_raw) > 4096 else round(float(mem_raw), 1)
         node_rows.append(
             {
                 "vcenter": str(root_name),
@@ -380,6 +522,11 @@ def compute_manifest_intelligence(
                 "powered_off_vms": off_vms,
                 "vsphere_version": str(ver) if ver is not None else "Not available in uploaded sheet",
                 "hardware_details": hardware_details,
+                "vendor": vendor_out or "n/a",
+                "model": str(model) if model else "n/a",
+                "cpu_model": cpu_model_out or "n/a",
+                "host_cores": cores_out if cores_out is not None else "n/a",
+                "host_ram_gb": host_ram_gb_out if host_ram_gb_out is not None else "n/a",
                 "top_os_family": top_os or "Unknown",
             }
         )
@@ -513,6 +660,7 @@ def compute_manifest_intelligence(
         },
         "logical_view": {
             "vcenters": logical_vcenters,
+            "host_inventory_enriched": bool(len(host_enriched) > 0),
             "available_columns": {
                 "vcenter": vcenter_col,
                 "datacenter": dc_col,

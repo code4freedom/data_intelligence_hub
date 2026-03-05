@@ -16,9 +16,16 @@
   .panel { border: 1px solid #d8e3ec; border-radius: 6px; padding: 10px; background: #fff; }
   .panel h2 { font-size: 12px; color: #0d4c79; margin-bottom: 6px; }
   table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
   th { background: #0a6aa1; color: #fff; font-size: 10px; text-align: left; padding: 6px; }
-  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e7eef3; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e7eef3; vertical-align: top; word-break: break-word; }
   tr:nth-child(even) { background: #f7fbff; }
+  @media print {
+    table { page-break-inside: auto; break-inside: auto; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+  }
 </style>
 </head>
 <body>

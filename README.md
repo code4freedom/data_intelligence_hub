@@ -1,51 +1,38 @@
 # VCF Intelligence Hub
 
 Enterprise RVTools analytics platform with:
-- FastAPI backend
+- FastAPI backend (Gunicorn + Uvicorn workers)
 - React dashboard
 - PDF/PPTX report export
 - Project-based data isolation
 - Docker-first runtime
 
-## 1. Publish To GitHub
+## 1. Quick Start
 
-From project root:
-
-```bash
-git init
-git add .
-git commit -m "Initial import: VCF Intelligence Hub"
-git branch -M main
-git remote add origin https://github.com/<your-org>/<your-repo>.git
-git push -u origin main
-```
-
-## 2. Run On MacBook (Docker)
-
-Prerequisites:
-- Docker Desktop for Mac
-- At least 8 GB RAM allocated to Docker
-
-From cloned repo:
+### Prerequisites
+- Docker Desktop (8 GB+ RAM allocated)
+- Copy `.env.example` → `.env` and set real credentials
 
 ```bash
+cp .env.example .env
+# Edit .env with your passwords
 docker compose up -d --build
 ```
 
-Services:
+### Services
 - Dashboard (Vite): `http://localhost:5173`
 - Backend API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health`
 - Neo4j: `http://localhost:7474`
 - MinIO console: `http://localhost:9001`
 
-Stop:
-
+### Stop
 ```bash
 docker compose down
 ```
 
-## 3. Typical Usage
+## 2. Typical Usage
 
 1. Open dashboard: `http://localhost:5173`
 2. Create/select customer project.
@@ -53,7 +40,7 @@ docker compose down
 4. Optionally enable anonymization on upload.
 5. Export PDF/PPTX report.
 
-## 4. Data Layout
+## 3. Data Layout
 
 Runtime data is stored under:
 
@@ -66,8 +53,10 @@ data/projects/<project>/
   config/
 ```
 
-## 5. Useful API Endpoints
+## 4. Useful API Endpoints
 
+- `GET /health` — Liveness check
+- `GET /ready` — Readiness check
 - `GET /projects`
 - `POST /projects/create`
 - `DELETE /projects/{project}`
@@ -80,15 +69,22 @@ data/projects/<project>/
 - `GET /kpis`
 - `GET /kpis/enterprise`
 
-## 6. Notes For Mac
+## 5. Running Tests
+
+```bash
+pip install -r requirements.txt
+pytest -q --cov=src
+```
+
+## 6. Security / Production
+
+- **Authentication:** Add JWT/OAuth2 middleware or deploy behind an authenticating reverse proxy before exposing to the network.
+- **Secrets:** All credentials are externalized via `.env`. Never commit `.env` to version control.
+- **Uploads:** File uploads are validated for type (.xlsx/.xls only), size, and filename sanitization.
+- **Data backups:** Use external managed volumes/backups for `/data`.
+
+## 7. Notes For Mac
 
 - First start will take longer (`npm install` inside frontend container).
 - If dashboard shows stale assets, hard refresh browser (`Cmd+Shift+R`).
 - If ports are occupied, change host ports in `docker-compose.yml`.
-
-## 7. Security / Production
-
-Before production:
-- Change default database and Neo4j credentials.
-- Put the API behind auth/reverse proxy.
-- Use external managed volumes/backups for `/data`.

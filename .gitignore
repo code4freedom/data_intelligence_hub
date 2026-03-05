@@ -17,6 +17,7 @@ Thumbs.db
 # Local env
 .env
 .env.*
+!.env.example
 
 # Runtime data and exports
 data/

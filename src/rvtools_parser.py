@@ -46,8 +46,9 @@ def stream_sheet_rows(xlsx_path: str, sheet_name: str) -> Generator[Dict, None, 
         yield {k: v for k, v in zip(norm_headers, r)}
 
 
-def _md5_file(path: Path) -> str:
-    h = hashlib.md5()
+def _sha256_file(path: Path) -> str:
+    """Compute SHA-256 hash of a file."""
+    h = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
@@ -57,11 +58,10 @@ def _md5_file(path: Path) -> str:
 def _upload_file_s3(local_path: Path, bucket: str, key: str, endpoint_url: str, access_key: str, secret_key: str):
     import boto3
     s3 = boto3.resource("s3", endpoint_url=endpoint_url, aws_access_key_id=access_key, aws_secret_access_key=secret_key)
-    # create bucket if not exists (MinIO tolerates create)
     try:
         s3.create_bucket(Bucket=bucket)
     except Exception:
-        pass
+        logger.debug("Bucket %s already exists or create failed (expected for MinIO)", bucket)
     s3.Bucket(bucket).upload_file(str(local_path), key)
 
 
@@ -81,8 +81,6 @@ def chunk_and_write(xlsx_path: str, sheet_name: str, out_dir: str, chunk_size: i
     buffer = []
     count = 0
     chunk_idx = 0
-    # support optional shard-by-key mode
-    shards = {}
     total_rows = 0
 
     for row in stream_sheet_rows(xlsx_path, sheet_name):
@@ -95,8 +93,8 @@ def chunk_and_write(xlsx_path: str, sheet_name: str, out_dir: str, chunk_size: i
             df.to_parquet(out_path, engine="pyarrow", index=False)
             rows = len(buffer)
             size = out_path.stat().st_size
-            md5 = _md5_file(out_path)
-            entry = {"name": out_path.name, "rows": rows, "size": size, "md5": md5, "local_path": str(out_path)}
+            sha256 = _sha256_file(out_path)
+            entry = {"name": out_path.name, "rows": rows, "size": size, "sha256": sha256, "local_path": str(out_path)}
             if upload_s3 and s3_bucket and s3_endpoint and s3_access_key and s3_secret_key:
                 key = f"{ingest_id or 'ingest'}/chunks/{out_path.name}"
                 _upload_file_s3(out_path, s3_bucket, key, s3_endpoint, s3_access_key, s3_secret_key)
@@ -115,8 +113,8 @@ def chunk_and_write(xlsx_path: str, sheet_name: str, out_dir: str, chunk_size: i
         df.to_parquet(out_path, engine="pyarrow", index=False)
         rows = len(buffer)
         size = out_path.stat().st_size
-        md5 = _md5_file(out_path)
-        entry = {"name": out_path.name, "rows": rows, "size": size, "md5": md5, "local_path": str(out_path)}
+        sha256 = _sha256_file(out_path)
+        entry = {"name": out_path.name, "rows": rows, "size": size, "sha256": sha256, "local_path": str(out_path)}
         if upload_s3 and s3_bucket and s3_endpoint and s3_access_key and s3_secret_key:
             key = f"{ingest_id or 'ingest'}/chunks/{out_path.name}"
             _upload_file_s3(out_path, s3_bucket, key, s3_endpoint, s3_access_key, s3_secret_key)
@@ -124,7 +122,6 @@ def chunk_and_write(xlsx_path: str, sheet_name: str, out_dir: str, chunk_size: i
             entry["s3_bucket"] = s3_bucket
         written.append(entry)
         logger.info("Wrote final chunk %s (%d rows)", out_path, rows)
-
 
     manifest = {
         "ingest_id": ingest_id or "ingest",
@@ -163,8 +160,6 @@ if __name__ == "__main__":
     parser.add_argument("--s3-secret-key", default=os.environ.get("S3_SECRET_KEY"), help="S3 secret key")
     parser.add_argument("--s3-bucket", default=os.environ.get("S3_BUCKET"), help="S3 bucket")
     parser.add_argument("--ingest-id", default=os.environ.get("INGEST_ID"), help="ingest id / prefix")
-    parser.add_argument("--shards", type=int, default=0, help="number of hash shards (0=disabled)")
-    parser.add_argument("--shard-key", default=None, help="column name to use as shard key (e.g. Name or Host)")
 
     args = parser.parse_args()
     result = chunk_and_write(args.input, args.sheet, args.out, args.chunk_size,
@@ -174,5 +169,4 @@ if __name__ == "__main__":
                              s3_secret_key=args.s3_secret_key,
                              s3_bucket=args.s3_bucket,
                              ingest_id=args.ingest_id)
-    # print manifest path as JSON for callers
     print(json.dumps(result))

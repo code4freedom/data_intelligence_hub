@@ -1,19 +1,37 @@
-openpyxl>=3.0.10
-pandas>=2.0.0
-pyarrow>=12.0.0
-fastapi>=0.95.2
-uvicorn[standard]>=0.22.0
-python-multipart>=0.0.6
-reportlab>=4.0
-python-pptx>=0.6.21
-boto3>=1.26.0
-jinja2>=3.1.2
-rq>=1.12.0
-pyppeteer>=1.0.2
-neo4j>=5.9.0
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.6
-pytest>=7.0.0
-locust>=2.15.0
-google-cloud-bigquery>=3.11.0
-pyarrow>=12.0.0
+# Core
+openpyxl==3.1.5
+pandas==2.2.3
+pyarrow==15.0.2
+
+# Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+gunicorn==23.0.0
+python-multipart==0.0.17
+
+# Report Generation
+reportlab==4.2.5
+python-pptx==1.0.2
+jinja2==3.1.5
+
+# Object Storage
+boto3==1.36.7
+
+# Task Queue
+rq==1.16.2
+
+# Headless Rendering
+pyppeteer==2.0.0
+
+# Graph Database
+neo4j==5.27.0
+
+# SQL Database
+sqlalchemy==2.0.37
+psycopg2-binary==2.9.10
+
+# Testing (dev only)
+pytest==8.3.4
+locust==2.32.6
+
+# CORS support (included via FastAPI/Starlette)

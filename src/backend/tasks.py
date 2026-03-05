@@ -1,9 +1,10 @@
 import os
 import json
 import re
+import logging
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from jinja2 import Template
 from pptx import Presentation
@@ -19,6 +20,8 @@ from pyppeteer import launch
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.pagesizes import letter
 
+logger = logging.getLogger(__name__)
+
 DATA_DIR = Path('/data')
 EXPORTS_DIR = DATA_DIR / 'exports'
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -32,6 +35,36 @@ APPENDIX_CATALOG = [
     {"id": "application_landscape", "title": "Application Landscape", "file": "application_landscape_template.html"},
     {"id": "vsphere_estate_platform_health", "title": "vSphere Estate - Platform Health", "file": "platform_health_template.html"},
 ]
+REPORT_PROFILES = [
+    {
+        "id": "full",
+        "title": "Full Intelligence (Default)",
+        "description": "All core sections and selected appendices.",
+        "default_appendices": [a["id"] for a in APPENDIX_CATALOG],
+        "sections": ["cover", "logical_view", "executive_summary", "enterprise_metrics", "cluster_hotspots", "application_intelligence", "historical_trends", "forecasting", "anomalies", "optimization", "operational_scorecard", "action_backlog", "remediation_plan"],
+    },
+    {
+        "id": "cio",
+        "title": "CIO Profile",
+        "description": "Executive-first view focused on risk, finance, modernization and actions.",
+        "default_appendices": ["future_state_architecture", "vsphere_estate_platform_health"],
+        "sections": ["cover", "logical_view", "executive_summary", "enterprise_metrics", "historical_trends", "forecasting", "optimization", "operational_scorecard", "action_backlog", "remediation_plan"],
+    },
+    {
+        "id": "platform_ops",
+        "title": "Platform Ops Profile",
+        "description": "Operations-focused view for cluster pressure, lifecycle and remediation execution.",
+        "default_appendices": ["current_state_architecture", "vsphere_estate_platform_health", "application_landscape"],
+        "sections": ["cover", "logical_view", "enterprise_metrics", "cluster_hotspots", "historical_trends", "forecasting", "anomalies", "optimization", "operational_scorecard", "action_backlog", "remediation_plan"],
+    },
+    {
+        "id": "architecture",
+        "title": "Architecture Profile",
+        "description": "Topology, application mapping, lifecycle and target-state planning.",
+        "default_appendices": ["current_state_architecture", "future_state_architecture", "application_landscape"],
+        "sections": ["cover", "logical_view", "executive_summary", "cluster_hotspots", "application_intelligence", "historical_trends", "forecasting", "optimization", "action_backlog", "remediation_plan"],
+    },
+]
 
 
 def _appendix_fragment_from_html(html_doc: str) -> str:
@@ -44,9 +77,16 @@ def _appendix_fragment_from_html(html_doc: str) -> str:
     return "\n".join(style_blocks) + "\n" + body_content
 
 
+def _resolve_profile(profile_id: Optional[str]) -> dict:
+    pid = (profile_id or "full").strip().lower()
+    for p in REPORT_PROFILES:
+        if p["id"] == pid:
+            return p
+    return REPORT_PROFILES[0]
+
+
 def _resolve_context_dirs(manifest_path: Path):
     """Resolve manifest/chunk/export dirs for project-based and legacy layouts."""
-    # Project layout: /data/projects/<project>/manifests/<manifest>
     if "projects" in manifest_path.parts and "manifests" in manifest_path.parts:
         manifests_dir = manifest_path.parent
         project_base = manifests_dir.parent
@@ -54,7 +94,6 @@ def _resolve_context_dirs(manifest_path: Path):
         exports_dir = project_base / "exports"
         exports_dir.mkdir(parents=True, exist_ok=True)
         return manifests_dir, chunks_dir, exports_dir
-    # Legacy fallback.
     return MANIFESTS_DIR, CHUNKS_DIR, EXPORTS_DIR
 
 
@@ -80,14 +119,11 @@ async def _render_html_assets(html: str, out_pdf: Optional[Path] = None, out_png
             'handleSIGHUP': False,
         })
         page = await browser.newPage()
-        
-        # Use a wide viewport to match landscape-oriented report pages.
+
         await page.setViewport({'width': 1600, 'height': 980})
-        
-        # Load HTML (no waitUntil parameter - not available for setContent)
+
         await page.setContent(html)
-        
-        # Wait a bit for styles to apply
+
         await asyncio.sleep(0.8)
 
         if out_pdf:
@@ -98,7 +134,7 @@ async def _render_html_assets(html: str, out_pdf: Optional[Path] = None, out_png
                 'printBackground': True,
                 'margin': {
                     'top': '10mm',
-                    'bottom': '10mm',
+                    'bottom': '18mm',
                     'left': '10mm',
                     'right': '10mm'
                 }
@@ -109,7 +145,7 @@ async def _render_html_assets(html: str, out_pdf: Optional[Path] = None, out_png
             await page.screenshot({'path': str(out_png), 'fullPage': True})
 
     except Exception as e:
-        print(f"Error in pyppeteer rendering: {e}")
+        logger.error("Error in pyppeteer rendering: %s", e)
         if out_pdf:
             c = rl_canvas.Canvas(str(out_pdf), pagesize=letter)
             c.setFont("Helvetica-Bold", 14)
@@ -137,6 +173,7 @@ def generate_report(
     template_name: str = 'vsphere',
     output_format: str = 'pdf',
     appendices: Optional[object] = None,
+    report_profile: Optional[str] = None,
 ) -> dict:
     """Task: read manifest, render template, produce report outputs, return export paths."""
     manifest_p = Path(manifest_path)
@@ -150,58 +187,60 @@ def generate_report(
     sheet = manifest.get('sheet', 'vInfo')
     chunk_count = manifest.get('chunk_count', 0)
     total_vms = manifest.get('total_rows', 0)
-    
+
     # Compute metrics from this manifest's chunks only
     total_hosts = set()
     total_compute = 0
     total_memory_mb = 0
     eos_risk = 0
     from src.schema.rvtools_schema import find_column
-    
+
     for chunk_info in manifest.get('chunks', []):
         chunk_path = Path(chunk_info.get('local_path'))
         if not chunk_path.exists():
             continue
-        
+
         try:
             import pandas as pd
             df = pd.read_parquet(str(chunk_path))
-            
+
             # Host count
             host_col = find_column(df.columns, 'vInfo', 'host')
             if host_col and host_col in df.columns:
                 host_vals = df[host_col].dropna().unique().tolist()
                 total_hosts.update([str(h) for h in host_vals])
-            
+
             # CPU
             cpu_col = find_column(df.columns, 'vInfo', 'numcpu')
             if cpu_col and cpu_col in df.columns:
                 try:
                     total_compute += int(df[cpu_col].fillna(0).astype(int).sum())
                 except Exception:
-                    pass
-            
+                    logger.warning("Could not sum CPU column in chunk %s", chunk_path)
+
             # Memory
             mem_col = find_column(df.columns, 'vInfo', 'memorymb')
             if mem_col and mem_col in df.columns:
                 try:
                     total_memory_mb += df[mem_col].fillna(0).astype(float).sum()
                 except Exception:
-                    pass
-            
-            # EOS Risk (versions starting with 6 or 7 are older)
+                    logger.warning("Could not sum memory column in chunk %s", chunk_path)
+
+            # EOS Risk
             ver_col = find_column(df.columns, 'vInfo', 'version')
             if ver_col and ver_col in df.columns:
                 try:
                     versions = df[ver_col].astype(str).str[0]
                     eos_risk += (versions.isin(['6', '7'])).sum()
                 except Exception:
-                    pass
+                    logger.warning("Could not evaluate EOS risk in chunk %s", chunk_path)
         except Exception as e:
-            print(f"Warning: could not read chunk {chunk_path}: {e}")
-    
+            logger.warning("Could not read chunk %s: %s", chunk_path, e)
+
     total_memory_tb = total_memory_mb / (1024 * 1024) if total_memory_mb > 0 else 0
-    
+
+    report_author = os.environ.get('REPORT_AUTHOR', 'VCF Intelligence Hub')
+
     context = {
         'total_vms': total_vms,
         'total_hosts': len(total_hosts),
@@ -209,14 +248,16 @@ def generate_report(
         'total_memory': f"{total_memory_tb:.2f} TB" if total_memory_tb > 0 else "--",
         'eos_risk': int(eos_risk),
         'chunks': chunk_count,
-        'generation_date': datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
-        'author_name': 'Samir Roshan',
+        'generation_date': datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        'author_name': report_author,
         'logo_url': f"{os.environ.get('REPORT_ASSET_BASE_URL', 'http://localhost:8000')}/static/public/vcf-hub-logo.png",
     }
 
+    profile = _resolve_profile(report_profile)
+    section_ids = set(profile.get("sections", []))
     selected_ids = []
     if appendices is None:
-        selected_ids = [a["id"] for a in APPENDIX_CATALOG]
+        selected_ids = profile.get("default_appendices", [a["id"] for a in APPENDIX_CATALOG])
     elif isinstance(appendices, str):
         selected_ids = [x.strip() for x in appendices.split(",") if x.strip()]
     elif isinstance(appendices, list):
@@ -237,8 +278,29 @@ def generate_report(
             html_fragment = _appendix_fragment_from_html(html_doc)
             example_pages.append({"id": aid, "title": meta["title"], "html": html_fragment})
         except Exception:
+            logger.warning("Failed to render appendix %s", aid)
             continue
     context["example_pages"] = example_pages
+    context["report_profile"] = {
+        "id": profile.get("id"),
+        "title": profile.get("title"),
+        "description": profile.get("description"),
+    }
+    context["section_enabled"] = {
+        "cover": "cover" in section_ids,
+        "logical_view": "logical_view" in section_ids,
+        "executive_summary": "executive_summary" in section_ids,
+        "enterprise_metrics": "enterprise_metrics" in section_ids,
+        "cluster_hotspots": "cluster_hotspots" in section_ids,
+        "application_intelligence": "application_intelligence" in section_ids,
+        "historical_trends": "historical_trends" in section_ids,
+        "forecasting": "forecasting" in section_ids,
+        "anomalies": "anomalies" in section_ids,
+        "optimization": "optimization" in section_ids,
+        "operational_scorecard": "operational_scorecard" in section_ids,
+        "action_backlog": "action_backlog" in section_ids,
+        "remediation_plan": "remediation_plan" in section_ids,
+    }
 
     intelligence = compute_manifest_intelligence(
         manifest_path,
@@ -293,7 +355,7 @@ def generate_report(
     ingest_id = manifest.get('ingest_id', 'ingest')
     out_base = exports_dir / ingest_id
     out_base.mkdir(parents=True, exist_ok=True)
-    run_id = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
     out_pdf = out_base / f"report_{template_name}_{ingest_id}_{run_id}.pdf"
     out_png = out_base / f"report_{template_name}_{ingest_id}_{run_id}.png"
     out_pptx = out_base / f"report_{template_name}_{ingest_id}_{run_id}.pptx"
@@ -320,6 +382,7 @@ def generate_report(
         'ingest_id': ingest_id,
         'chunks': chunk_count,
         'output_format': fmt,
+        'report_profile': profile.get("id"),
         'intelligence': intelligence,
         'advanced': advanced,
     }

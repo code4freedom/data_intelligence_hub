@@ -9,4 +9,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 ENV PYTHONUNBUFFERED=1
-CMD ["uvicorn", "src.backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "src.backend.app:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300"]

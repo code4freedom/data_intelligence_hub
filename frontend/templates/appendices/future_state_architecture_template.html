@@ -13,13 +13,20 @@
   .panel { border: 1px solid #d8e2eb; border-radius: 6px; padding: 10px; background: #fbfdff; }
   .panel h2 { font-size: 12px; color: #12406a; margin-bottom: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
   th { background: #0a6aa1; color: #fff; font-size: 10px; text-align: left; padding: 6px; }
-  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; vertical-align: top; word-break: break-word; }
   tr:nth-child(even) { background: #f7fbff; }
   .kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
   .k { border: 1px solid #d8e2eb; border-radius: 6px; padding: 8px; background: #fff; }
   .k .l { font-size: 9px; color: #6a7782; text-transform: uppercase; font-weight: 700; }
   .k .v { font-size: 18px; color: #0a4d7a; font-weight: 800; margin-top: 2px; }
+  @media print {
+    table { page-break-inside: auto; break-inside: auto; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+  }
 </style>
 </head>
 <body>

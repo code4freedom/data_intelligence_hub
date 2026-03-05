@@ -16,12 +16,19 @@
   .section { margin-top: 12px; }
   .section h2 { font-size: 13px; color: #0a4d7a; margin-bottom: 6px; border-left: 3px solid #0a6aa1; padding-left: 6px; }
   table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
   th { background: #0a6aa1; color: #fff; font-size: 10px; padding: 6px; text-align: left; }
-  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; }
+  td { font-size: 10px; padding: 6px; border-bottom: 1px solid #e8eef3; vertical-align: top; word-break: break-word; }
   tr:nth-child(even) { background: #f7fbff; }
   .stack { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .panel { border: 1px solid #d7e2ea; border-radius: 6px; padding: 8px; }
   .pill { display: inline-block; font-size: 9px; padding: 3px 6px; border-radius: 999px; background: #eaf4fb; border: 1px solid #c7e0ef; margin-right: 6px; margin-bottom: 4px; }
+  @media print {
+    table { page-break-inside: auto; break-inside: auto; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+  }
 </style>
 </head>
 <body>

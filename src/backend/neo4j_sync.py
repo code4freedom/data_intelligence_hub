@@ -1,10 +1,16 @@
-from neo4j import GraphDatabase
 import json
+import logging
+import os
 from pathlib import Path
 
-NEO4J_URI = "bolt://neo4j:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASS = "rvtools_neo4j_2026"
+import pandas as pd
+from neo4j import GraphDatabase
+
+logger = logging.getLogger(__name__)
+
+NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://neo4j:7687")
+NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+NEO4J_PASS = os.environ.get("NEO4J_PASSWORD", "")
 
 
 def sync_manifest_to_neo4j(manifest_path: str):
@@ -23,7 +29,6 @@ def sync_manifest_to_neo4j(manifest_path: str):
             chunk_count=m.get('chunk_count')
         )
 
-        # For each chunk, create a Chunk node and optionally load sample nodes/edges
         for ch in m.get('chunks', []):
             name = ch.get('name')
             rows = ch.get('rows')
@@ -31,17 +36,13 @@ def sync_manifest_to_neo4j(manifest_path: str):
                 "MERGE (c:Chunk {name:$name}) SET c.rows=$rows",
                 name=name, rows=rows
             )
-            # link chunk to ingest
             session.run(
                 "MATCH (c:Chunk {name:$name}), (i:Ingest {id:$id}) MERGE (c)-[:PART_OF]->(i)",
                 name=name, id=ingest_id
             )
 
-            # try to read local parquet sample and create VM/Host nodes
             local = ch.get('local_path')
             if local:
-                from pathlib import Path
-                import pandas as pd
                 pch = Path(local)
                 if pch.exists():
                     try:
@@ -62,7 +63,7 @@ def sync_manifest_to_neo4j(manifest_path: str):
                                     v=vm, h=host
                                 )
                     except Exception:
-                        pass
+                        logger.exception("Failed to sync chunk %s to Neo4j", pch)
 
     driver.close()
 

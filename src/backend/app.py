@@ -1,6 +1,7 @@
 import os
-import subprocess
 import json
+import logging
+import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -11,7 +12,9 @@ import pandas as pd
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Template
+from src.rvtools_parser import chunk_and_write
 from src.backend.kpis import compute_full_kpis
 from src.backend.intelligence import compute_manifest_intelligence
 from src.backend.advanced_analytics import compute_advanced_analytics
@@ -36,20 +39,78 @@ from src.backend.neo4j_sync import sync_manifest_to_neo4j
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Upload constraints
+# ---------------------------------------------------------------------------
+MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = {".xlsx", ".xls"}
+_UNSAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9._-]")
+
+
+def _secure_filename(name: str) -> str:
+    """Sanitize uploaded filename: strip path components, replace unsafe chars."""
+    # Take only the final component (prevent path traversal)
+    name = Path(name).name
+    # Replace unsafe characters
+    name = _UNSAFE_FILENAME_RE.sub("_", name)
+    # Prevent empty or hidden filenames
+    name = name.lstrip("._") or "upload"
+    return name
+
+
+# ---------------------------------------------------------------------------
+# Directory setup
+# ---------------------------------------------------------------------------
 RAW_DIR = DATA_DIR / "raw"
 CHUNKS_DIR = DATA_DIR / "chunks"
 MANIFESTS_DIR = DATA_DIR / "manifests"
-# Legacy dirs kept for backward compatibility.
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
 ensure_project_dirs("default")
 
+# ---------------------------------------------------------------------------
+# App initialization
+# ---------------------------------------------------------------------------
 app = FastAPI(title="VCF Intelligence Hub Backend")
 app.mount("/static", StaticFiles(directory="/app/frontend"), name="static")
 app.include_router(graph_router, prefix='/api')
 
+# CORS middleware (#7)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+
+# ---------------------------------------------------------------------------
+# Health endpoint (#6)
+# ---------------------------------------------------------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    """Readiness check — verifies data directory is accessible."""
+    try:
+        DATA_DIR.exists()
+        return {"status": "ready"}
+    except Exception as e:
+        logger.error("Readiness check failed: %s", e)
+        return JSONResponse(status_code=503, content={"status": "not ready", "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 def _project_context(project: Optional[str]):
     return ensure_project_dirs(project or "default")
 
@@ -71,6 +132,7 @@ def _history_from_manifests_dir(manifests_dir: Path):
         try:
             m = json.loads(mf.read_text(encoding="utf-8"))
         except Exception:
+            logger.warning("Could not read manifest %s", mf)
             continue
         ts = m.get("generated_at_utc")
         if not ts:
@@ -108,19 +170,17 @@ def _normalize_export_result(result):
         if not p.exists():
             continue
         resolved = p.resolve()
-        # Project-scoped exports: /data/projects/<project>/exports/...
         parts = resolved.parts
         if "projects" in parts and "exports" in parts:
             try:
                 idx = parts.index("projects")
                 project = parts[idx + 1]
                 eidx = parts.index("exports")
-                rel = Path(*parts[eidx + 1 :])
+                rel = Path(*parts[eidx + 1:])
                 out[f"{key}_url"] = f"/projects/{project}/exports/{rel.as_posix()}"
                 continue
             except Exception:
-                pass
-        # Legacy exports fallback.
+                logger.warning("Could not resolve export path for %s", value)
         try:
             rel = resolved.relative_to((DATA_DIR / "exports").resolve())
             out[f"{key}_url"] = f"/exports/{rel.as_posix()}"
@@ -129,6 +189,9 @@ def _normalize_export_result(result):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return (Path("/app/frontend/index.html").read_text())
@@ -165,6 +228,7 @@ def delete_project(project: str):
     try:
         shutil.rmtree(dirs["base"], ignore_errors=False)
     except Exception as e:
+        logger.error("Failed to delete project %s: %s", p, e)
         return JSONResponse(status_code=500, content={"error": f"project delete failed: {str(e)}"})
     return {"status": "deleted", "project": p}
 
@@ -180,15 +244,15 @@ def delete_dataset(project: str, manifest_name: str):
     try:
         m = json.loads(mf.read_text(encoding="utf-8"))
     except Exception as e:
+        logger.error("Cannot read manifest %s: %s", mf, e)
         return JSONResponse(status_code=500, content={"error": f"cannot read manifest: {str(e)}"})
 
-    # Remove manifest file first.
     try:
         mf.unlink(missing_ok=True)
     except Exception as e:
+        logger.error("Failed to delete manifest file %s: %s", mf, e)
         return JSONResponse(status_code=500, content={"error": f"manifest delete failed: {str(e)}"})
 
-    # Delete exports for this ingest id.
     ingest_id = str(m.get("ingest_id", "")).strip()
     deleted_exports = 0
     if ingest_id:
@@ -198,9 +262,8 @@ def delete_dataset(project: str, manifest_name: str):
                 shutil.rmtree(exp_dir, ignore_errors=False)
                 deleted_exports += 1
             except Exception:
-                pass
+                logger.warning("Failed to delete export dir %s", exp_dir)
 
-    # Best-effort chunk cleanup: delete only if no other manifests reference the same local_path.
     referenced = set()
     for other in dirs["manifests"].glob("manifest_*.json"):
         try:
@@ -223,7 +286,7 @@ def delete_dataset(project: str, manifest_name: str):
                 cp.unlink(missing_ok=True)
                 deleted_chunks += 1
             except Exception:
-                pass
+                logger.warning("Failed to delete chunk file %s", cp)
 
     return {
         "status": "deleted",
@@ -239,6 +302,11 @@ def get_appendices():
     return {"appendices": tasks.APPENDIX_CATALOG}
 
 
+@app.get("/report-profiles")
+def get_report_profiles():
+    return {"profiles": tasks.REPORT_PROFILES}
+
+
 @app.get("/projects/{project}/app-mapping")
 def get_project_app_mapping(project: str):
     p = normalize_project_name(project)
@@ -246,8 +314,6 @@ def get_project_app_mapping(project: str):
     if not path.exists():
         return {"project": p, "path": str(path), "exists": False, "preview": []}
     try:
-        import pandas as pd
-
         df = pd.read_csv(path)
         preview = df.head(20).fillna("").to_dict(orient="records")
         return {
@@ -259,6 +325,7 @@ def get_project_app_mapping(project: str):
             "preview": preview,
         }
     except Exception as e:
+        logger.error("Failed to read app mapping for %s: %s", p, e)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
@@ -276,16 +343,12 @@ async def upload_project_app_mapping(project: str, file: UploadFile = File(...))
 
 @app.get("/export/html")
 def export_html(template: str = "vsphere", project: str = "default"):
-    """Render a sample HTML report template populated with basic KPIs.
-
-    `template` currently supports: "vsphere" (vSphere Estate Dashboard).
-    """
+    """Render a sample HTML report template populated with basic KPIs."""
     if template == "vsphere":
         tpl_path = Path("/app/frontend/templates/vsphere_template.html")
         if not tpl_path.exists():
             return JSONResponse(status_code=404, content={"error": "template not found"})
         dirs = _read_dirs_for_project(project)
-        # compute full KPIs from manifests and chunk parquet files
         k = compute_full_kpis(str(dirs["manifests"]), str(dirs["chunks"]))
         context = {
             "total_vms": k.get("total_vms", 0),
@@ -302,12 +365,34 @@ def export_html(template: str = "vsphere", project: str = "default"):
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...), project: str = Form("default")):
+    # Validate extension (#4)
+    original_name = file.filename or "upload.xlsx"
+    ext = Path(original_name).suffix.lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_UPLOAD_EXTENSIONS)}"},
+        )
+
+    # Sanitize filename (#4)
+    safe_name = _secure_filename(original_name)
+
     dirs = _project_context(project)
-    dest = dirs["raw"] / file.filename
+    dest = dirs["raw"] / safe_name
+
+    # Read with size limit (#4)
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"error": f"File too large ({len(content)} bytes). Max allowed: {MAX_UPLOAD_SIZE_MB} MB"},
+        )
+
     with dest.open("wb") as f:
-        content = await file.read()
         f.write(content)
-    return {"filename": file.filename, "project": dirs["name"], "stored_path": str(dest)}
+
+    logger.info("Uploaded file %s (%d bytes) to project %s", safe_name, len(content), dirs["name"])
+    return {"filename": safe_name, "project": dirs["name"], "stored_path": str(dest)}
 
 
 @app.post("/parse")
@@ -317,87 +402,87 @@ def parse(filename: str = Form(...), sheet: str = Form(...), chunk_size: int = F
           s3_bucket: Optional[str] = Form(None), ingest_id: Optional[str] = Form(None),
           project: str = Form("default"), anonymize: Optional[bool] = Form(None)):
     dirs = _project_context(project)
-    src = dirs["raw"] / filename
+
+    # Sanitize the filename before using it (#3)
+    safe_filename = _secure_filename(filename)
+    src = dirs["raw"] / safe_filename
     if not src.exists():
         return JSONResponse(status_code=404, content={"error": "file not found"})
     if not ingest_id:
         ingest_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
-    cmd = ["python", "/app/run_parser.py", "--input", str(src), "--sheet", sheet, "--out", str(dirs["chunks"]), "--chunk-size", str(chunk_size), "--ingest-id", ingest_id]
-    if upload_s3:
-        cmd += ["--upload-s3"]
-        if s3_endpoint:
-            cmd += ["--s3-endpoint", s3_endpoint]
-        if s3_access_key:
-            cmd += ["--s3-access-key", s3_access_key]
-        if s3_secret_key:
-            cmd += ["--s3-secret-key", s3_secret_key]
-        if s3_bucket:
-            cmd += ["--s3-bucket", s3_bucket]
-        if ingest_id:
-            cmd += ["--ingest-id", ingest_id]
+    sheets = [s.strip() for s in str(sheet).split(",") if s.strip()]
+    if not sheets:
+        return JSONResponse(status_code=400, content={"error": "at least one sheet is required"})
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    out, err = proc.communicate()
-    if proc.returncode != 0:
-        return JSONResponse(status_code=500, content={"error": err})
-
-    # parser prints JSON; try whole output first, then last JSON-looking line.
-    manifest_path = None
-    try:
-        parsed = json.loads(out.strip())
-        manifest_path = parsed.get("manifest_path")
-    except Exception:
-        for line in reversed(out.splitlines()):
-            candidate = line.strip()
-            if not candidate.startswith("{"):
-                continue
-            try:
-                parsed = json.loads(candidate)
-                manifest_path = parsed.get("manifest_path")
-                break
-            except Exception:
-                continue
-
-    # if manifest exists in chunk dir, load and copy into manifests dir
-    manifest_obj = None
+    run_results = []
+    parse_warnings = []
+    parse_errors = []
     project_settings = get_project_settings(dirs["name"])
     do_anonymize = bool(project_settings.get("anonymize_default", False)) if anonymize is None else bool(anonymize)
-    if manifest_path:
-        try:
-            mp = Path(manifest_path)
-            if mp.exists():
-                manifest_obj = json.loads(mp.read_text(encoding="utf-8"))
-                if do_anonymize:
-                    manifest_obj = anonymize_manifest_chunks(manifest_obj, seed=f"{dirs['name']}:{manifest_obj.get('ingest_id', 'ingest')}")
-                    mp.write_text(json.dumps(manifest_obj, indent=2), encoding="utf-8")
-                # copy manifest to manifests dir
-                dest = dirs["manifests"] / mp.name
-                dest.write_text(json.dumps(manifest_obj, indent=2), encoding="utf-8")
-        except Exception:
-            manifest_obj = None
 
-    # fallback: search manifests dir for recent manifest for sheet
-    if manifest_obj is None:
-        candidates = list(dirs["manifests"].glob(f"manifest_{sheet}_*.json"))
-        if candidates:
-            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            try:
-                manifest_obj = json.loads(candidates[0].read_text(encoding="utf-8"))
-            except Exception:
-                manifest_obj = None
+    for idx, sh in enumerate(sheets):
+        # Call parser in-process instead of subprocess (#3)
+        try:
+            parsed = chunk_and_write(
+                str(src), sh, str(dirs["chunks"]), chunk_size,
+                upload_s3=upload_s3,
+                s3_endpoint=s3_endpoint,
+                s3_access_key=s3_access_key,
+                s3_secret_key=s3_secret_key,
+                s3_bucket=s3_bucket,
+                ingest_id=ingest_id,
+            )
+        except Exception as e:
+            logger.error("Parse failed for sheet %s: %s", sh, e)
+            if idx == 0:
+                return JSONResponse(status_code=500, content={"error": str(e)})
+            parse_warnings.append({"sheet": sh, "error": str(e)})
+            continue
+
+        manifest_path = parsed.get("manifest_path")
+        if not manifest_path:
+            parse_errors.append({"sheet": sh, "error": "manifest path not returned"})
+            continue
+
+        mp = Path(manifest_path)
+        if not mp.exists():
+            parse_errors.append({"sheet": sh, "error": f"manifest file not found: {manifest_path}"})
+            continue
+
+        manifest_obj = json.loads(mp.read_text(encoding="utf-8"))
+        if do_anonymize:
+            manifest_obj = anonymize_manifest_chunks(manifest_obj, seed=f"{dirs['name']}:{manifest_obj.get('ingest_id', 'ingest')}:{sh}")
+            mp.write_text(json.dumps(manifest_obj, indent=2), encoding="utf-8")
+
+        dest = dirs["manifests"] / mp.name
+        dest.write_text(json.dumps(manifest_obj, indent=2), encoding="utf-8")
+        run_results.append(
+            {
+                "sheet": sh,
+                "manifest_name": dest.name,
+                "manifest_path": str(dest),
+                "manifest": manifest_obj,
+            }
+        )
+
+    if not run_results:
+        return JSONResponse(status_code=500, content={"error": "no sheets parsed successfully", "details": parse_errors or parse_warnings})
+
+    primary_manifest = run_results[0]["manifest"]
 
     return {
-        "stdout": out,
-        "stderr": err,
-        "manifest": manifest_obj,
+        "manifest": primary_manifest,
+        "manifests": [{"sheet": r["sheet"], "manifest_name": r["manifest_name"]} for r in run_results],
+        "warnings": parse_warnings,
+        "errors": parse_errors,
         "project": dirs["name"],
         "anonymize": do_anonymize,
         "project_anonymize_default": bool(project_settings.get("anonymize_default", False)),
     }
 
 
-# Redis + RQ setup (uses redis service from docker-compose)
+# Redis + RQ setup
 redis_url = os.environ.get('REDIS_URL', 'redis://redis:6379')
 redis_conn = redis.from_url(redis_url)
 q = Queue('default', connection=redis_conn)
@@ -410,6 +495,7 @@ def create_job(
     output_format: str = Form('pdf'),
     project: str = Form("default"),
     appendices: Optional[str] = Form(None),
+    report_profile: Optional[str] = Form(None),
 ):
     dirs = _read_dirs_for_project(project)
     manifest_path = str(dirs["manifests"] / manifest_name)
@@ -418,8 +504,8 @@ def create_job(
     fmt = (output_format or "pdf").lower()
     if fmt not in ("pdf", "pptx", "both"):
         return JSONResponse(status_code=400, content={'error': 'output_format must be pdf, pptx, or both'})
-    job = q.enqueue(tasks.generate_report, manifest_path, template, fmt, appendices)
-    return {'job_id': job.get_id(), 'status': job.get_status(), 'output_format': fmt, 'project': dirs["name"]}
+    job = q.enqueue(tasks.generate_report, manifest_path, template, fmt, appendices, report_profile)
+    return {'job_id': job.get_id(), 'status': job.get_status(), 'output_format': fmt, 'project': dirs["name"], 'report_profile': report_profile or 'full'}
 
 
 @app.post('/export/create')
@@ -429,6 +515,7 @@ def create_export(
     output_format: str = Form('pdf'),
     project: str = Form("default"),
     appendices: Optional[str] = Form(None),
+    report_profile: Optional[str] = Form(None),
 ):
     """Generate export synchronously and return file immediately."""
     dirs = _read_dirs_for_project(project)
@@ -441,8 +528,9 @@ def create_export(
         return JSONResponse(status_code=400, content={'error': 'output_format must be pdf, pptx, or both'})
 
     try:
-        result = tasks.generate_report(manifest_path, template, fmt, appendices)
+        result = tasks.generate_report(manifest_path, template, fmt, appendices, report_profile)
     except Exception as e:
+        logger.error("Export generation failed: %s", e)
         return JSONResponse(status_code=500, content={'error': f'export generation failed: {str(e)}'})
 
     if fmt == "pdf":
@@ -521,15 +609,15 @@ def load_manifest(manifest_name: str = Form(...), project: str = Form("default")
     manifest_path = str(dirs["manifests"] / manifest_name)
     if not Path(manifest_path).exists():
         return JSONResponse(status_code=404, content={'error': 'manifest not found'})
-    # load into Postgres
     try:
         load_manifest_into_postgres(manifest_path)
     except Exception as e:
+        logger.error("Postgres load failed: %s", e)
         return JSONResponse(status_code=500, content={'error': str(e)})
-    # sync into Neo4j
     try:
         sync_manifest_to_neo4j(manifest_path)
     except Exception as e:
+        logger.error("Neo4j sync failed: %s", e)
         return JSONResponse(status_code=500, content={'error': 'neo4j sync failed: ' + str(e)})
     return {'status': 'ok'}
 
@@ -564,7 +652,7 @@ def kpis(sheet: str = "vInfo", project: str = "default"):
             "eos_risk": k.get("eos_risk", 0),
         }
     except Exception as e:
-        print(f"KPI computation error: {e}")
+        logger.error("KPI computation error: %s", e)
         return {
             "total_vms": 0,
             "total_hosts": 0,
@@ -601,6 +689,7 @@ def kpis_enterprise(manifest_name: Optional[str] = None, project: str = "default
             str(dirs["chunks"]),
         )
     except Exception as e:
+        logger.error("Enterprise KPI computation failed: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
     return {"project": dirs["name"], "manifest": target.name, "intelligence": intelligence, "advanced": advanced}
 
@@ -629,6 +718,7 @@ def analytics_full(
             forecast_horizon=max(1, min(24, forecast_horizon)),
         )
     except Exception as e:
+        logger.error("Full analytics computation failed: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
     return {"project": dirs["name"], "manifest": target.name, "analytics": result}
 
@@ -660,6 +750,7 @@ def analytics_whatif(
             consolidation_target_vcpu_pcpu=target_vcpu_pcpu,
         )
     except Exception as e:
+        logger.error("What-if analysis failed: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
     return {
         "project": dirs["name"],
@@ -680,6 +771,6 @@ def export_pdf(sheet: str = "vInfo"):
     c.drawString(72, 700, f"Sheet: {sheet}")
     c.drawString(72, 680, f"Chunks: {k.get('chunks', 0)}")
     c.drawString(72, 660, f"Rows: {k.get('rows', 0)}")
-    c.drawString(72, 640, "Author: Samir Roshan")
+    c.drawString(72, 640, f"Author: {os.environ.get('REPORT_AUTHOR', 'VCF Intelligence Hub')}")
     c.save()
     return FileResponse(str(out_pdf), media_type="application/pdf", filename=out_pdf.name)

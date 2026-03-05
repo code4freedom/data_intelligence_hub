@@ -34,7 +34,15 @@ def client(_mock_redis):
         Path("/tmp/test_vcf_data/chunks").mkdir(parents=True, exist_ok=True)
         Path("/tmp/test_vcf_data/manifests").mkdir(parents=True, exist_ok=True)
         from src.backend.app import app
+        from src.backend.auth import get_current_user
+        
+        # Override the dependency to simulate an authenticated user for all protected routes
+        app.dependency_overrides[get_current_user] = lambda: "admin"
+        
         yield TestClient(app)
+        
+        # Clean up overrides after tests
+        app.dependency_overrides.clear()
 
 
 class TestHealthEndpoints:
@@ -49,6 +57,21 @@ class TestHealthEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ready"
+
+
+class TestAuthEndpoints:
+    def test_login_invalid_password(self, client):
+        with patch("os.environ.get", return_value="secret123"):
+            resp = client.post("/token", data={"username": "admin", "password": "wrongpassword"})
+            assert resp.status_code == 401
+            assert "Incorrect password" in resp.json()["detail"]
+
+    def test_login_success(self, client):
+        with patch("os.environ.get", return_value="secret123"):
+            resp = client.post("/token", data={"username": "admin", "password": "secret123"})
+            assert resp.status_code == 200
+            assert "access_token" in resp.json()
+            assert resp.json()["token_type"] == "bearer"
 
 
 class TestUploadValidation:
@@ -160,3 +183,44 @@ class TestSecureFilename:
         from src.backend.app import _secure_filename
         result = _secure_filename("..hidden.xlsx")
         assert not result.startswith(".")
+
+
+class TestCSVExport:
+    def test_export_csv_missing_manifest(self, client):
+        resp = client.get("/export/csv?project=default&manifest=does_not_exist.json")
+        assert resp.status_code == 404
+
+    def test_export_csv_success(self, client, tmp_path):
+        import zipfile
+        
+        # Setup fake chunk and manifest
+        chunk_dir = Path("/tmp/test_vcf_data/chunks")
+        manifest_dir = Path("/tmp/test_vcf_data/manifests")
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        
+        chunk_path = chunk_dir / "test_chunk.parquet"
+        df = pd.DataFrame([{"Name": "vm1", "Host": "host1"}])
+        df.to_parquet(chunk_path, index=False)
+        
+        manifest = {
+            "ingest_id": "test_ingest_123",
+            "sheet": "vInfo",
+            "chunks": [{"local_path": str(chunk_path)}]
+        }
+        (manifest_dir / "manifest_test_dataset.json").write_text(json.dumps(manifest))
+        
+        resp = client.get("/export/csv?project=default&manifest=manifest_test_dataset.json")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            files = zf.namelist()
+            assert len(files) == 1
+            assert files[0] == "vInfo_part001.csv"
+            
+            with zf.open(files[0]) as f:
+                csv_df = pd.read_csv(f)
+                assert len(csv_df) == 1
+                assert csv_df.iloc[0]["Name"] == "vm1"
+

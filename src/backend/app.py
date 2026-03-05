@@ -6,10 +6,12 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 import zipfile
-from datetime import datetime, timezone
+import tempfile
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +38,7 @@ from src.backend import tasks
 from src.backend.graph_api import router as graph_router
 from src.backend.postgres_loader import load_manifest_into_postgres
 from src.backend.neo4j_sync import sync_manifest_to_neo4j
+from src.backend.auth import get_current_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -192,18 +195,37 @@ def _normalize_export_result(result):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+@app.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    app_pwd = os.environ.get("APP_PASSWORD")
+    if not app_pwd:
+        # If no password set in env, auto-succeed for local dev convenience
+        pass
+    elif form_data.password != app_pwd:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": "admin"}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return (Path("/app/frontend/index.html").read_text())
 
 
 @app.get("/projects")
-def get_projects():
+def get_projects(current_user: str = Depends(get_current_user)):
     return {"projects": list_projects()}
 
 
 @app.post("/projects/create")
-def create_project(name: str = Form(...), anonymize_default: bool = Form(False)):
+def create_project(name: str = Form(...), anonymize_default: bool = Form(False), current_user: str = Depends(get_current_user)):
     p = normalize_project_name(name)
     d = ensure_project_dirs(p)
     settings = update_project_settings(p, anonymize_default=anonymize_default)
@@ -213,14 +235,14 @@ def create_project(name: str = Form(...), anonymize_default: bool = Form(False))
 
 
 @app.get("/projects/{project}/history")
-def project_history(project: str):
+def project_history(project: str, current_user: str = Depends(get_current_user)):
     p = normalize_project_name(project)
     dirs = _read_dirs_for_project(p)
     return {"project": dirs["name"], "history": _history_from_manifests_dir(dirs["manifests"])}
 
 
 @app.delete("/projects/{project}")
-def delete_project(project: str):
+def delete_project(project: str, current_user: str = Depends(get_current_user)):
     p = normalize_project_name(project)
     dirs = project_dirs(p)
     if not dirs["base"].exists():
@@ -234,7 +256,7 @@ def delete_project(project: str):
 
 
 @app.delete("/projects/{project}/datasets/{manifest_name}")
-def delete_dataset(project: str, manifest_name: str):
+def delete_dataset(project: str, manifest_name: str, current_user: str = Depends(get_current_user)):
     p = normalize_project_name(project)
     dirs = _read_dirs_for_project(p)
     mf = dirs["manifests"] / manifest_name
@@ -298,17 +320,17 @@ def delete_dataset(project: str, manifest_name: str):
 
 
 @app.get("/appendices")
-def get_appendices():
+def get_appendices(current_user: str = Depends(get_current_user)):
     return {"appendices": tasks.APPENDIX_CATALOG}
 
 
 @app.get("/report-profiles")
-def get_report_profiles():
+def get_report_profiles(current_user: str = Depends(get_current_user)):
     return {"profiles": tasks.REPORT_PROFILES}
 
 
 @app.get("/projects/{project}/app-mapping")
-def get_project_app_mapping(project: str):
+def get_project_app_mapping(project: str, current_user: str = Depends(get_current_user)):
     p = normalize_project_name(project)
     path = project_dirs(p)["app_mapping"]
     if not path.exists():
@@ -330,7 +352,7 @@ def get_project_app_mapping(project: str):
 
 
 @app.post("/projects/{project}/app-mapping/upload")
-async def upload_project_app_mapping(project: str, file: UploadFile = File(...)):
+async def upload_project_app_mapping(project: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     p = normalize_project_name(project)
     if not file.filename.lower().endswith(".csv"):
         return JSONResponse(status_code=400, content={"error": "only .csv files are supported"})
@@ -342,7 +364,7 @@ async def upload_project_app_mapping(project: str, file: UploadFile = File(...))
 
 
 @app.get("/export/html")
-def export_html(template: str = "vsphere", project: str = "default"):
+def export_html(template: str = "vsphere", project: str = "default", current_user: str = Depends(get_current_user)):
     """Render a sample HTML report template populated with basic KPIs."""
     if template == "vsphere":
         tpl_path = Path("/app/frontend/templates/vsphere_template.html")
@@ -364,7 +386,7 @@ def export_html(template: str = "vsphere", project: str = "default"):
 
 
 @app.post("/upload")
-async def upload(file: UploadFile = File(...), project: str = Form("default")):
+async def upload(file: UploadFile = File(...), project: str = Form("default"), current_user: str = Depends(get_current_user)):
     # Validate extension (#4)
     original_name = file.filename or "upload.xlsx"
     ext = Path(original_name).suffix.lower()
@@ -400,7 +422,8 @@ def parse(filename: str = Form(...), sheet: str = Form(...), chunk_size: int = F
           upload_s3: bool = Form(False), s3_endpoint: Optional[str] = Form(None),
           s3_access_key: Optional[str] = Form(None), s3_secret_key: Optional[str] = Form(None),
           s3_bucket: Optional[str] = Form(None), ingest_id: Optional[str] = Form(None),
-          project: str = Form("default"), anonymize: Optional[bool] = Form(None)):
+          project: str = Form("default"), anonymize: Optional[bool] = Form(None),
+          current_user: str = Depends(get_current_user)):
     dirs = _project_context(project)
 
     # Sanitize the filename before using it (#3)
@@ -496,6 +519,7 @@ def create_job(
     project: str = Form("default"),
     appendices: Optional[str] = Form(None),
     report_profile: Optional[str] = Form(None),
+    current_user: str = Depends(get_current_user)
 ):
     dirs = _read_dirs_for_project(project)
     manifest_path = str(dirs["manifests"] / manifest_name)
@@ -516,6 +540,7 @@ def create_export(
     project: str = Form("default"),
     appendices: Optional[str] = Form(None),
     report_profile: Optional[str] = Form(None),
+    current_user: str = Depends(get_current_user)
 ):
     """Generate export synchronously and return file immediately."""
     dirs = _read_dirs_for_project(project)
@@ -567,7 +592,7 @@ def create_export(
 
 
 @app.get('/jobs/{job_id}')
-def get_job(job_id: str):
+def get_job(job_id: str, current_user: str = Depends(get_current_user)):
     try:
         job = Job.fetch(job_id, connection=redis_conn)
     except Exception:
@@ -577,7 +602,7 @@ def get_job(job_id: str):
 
 
 @app.get("/exports/{export_path:path}")
-def download_export(export_path: str):
+def download_export(export_path: str, current_user: str = Depends(get_current_user)):
     base = (DATA_DIR / "exports").resolve()
     candidate = (base / export_path).resolve()
     try:
@@ -590,7 +615,7 @@ def download_export(export_path: str):
 
 
 @app.get("/projects/{project}/exports/{export_path:path}")
-def download_export_for_project(project: str, export_path: str):
+def download_export_for_project(project: str, export_path: str, current_user: str = Depends(get_current_user)):
     dirs = project_dirs(project)
     base = dirs["exports"].resolve()
     candidate = (base / export_path).resolve()
@@ -604,7 +629,7 @@ def download_export_for_project(project: str, export_path: str):
 
 
 @app.post('/load_manifest')
-def load_manifest(manifest_name: str = Form(...), project: str = Form("default")):
+def load_manifest(manifest_name: str = Form(...), project: str = Form("default"), current_user: str = Depends(get_current_user)):
     dirs = _read_dirs_for_project(project)
     manifest_path = str(dirs["manifests"] / manifest_name)
     if not Path(manifest_path).exists():
@@ -623,14 +648,14 @@ def load_manifest(manifest_name: str = Form(...), project: str = Form("default")
 
 
 @app.get("/manifests")
-def list_manifests(project: str = "default"):
+def list_manifests(project: str = "default", current_user: str = Depends(get_current_user)):
     dirs = _read_dirs_for_project(project)
     paths = list(dirs["manifests"].glob("manifest_*.json"))
     return {"project": dirs["name"], "manifests": [p.name for p in sorted(paths, key=lambda x: x.stat().st_mtime, reverse=True)]}
 
 
 @app.get("/manifests/{name}")
-def get_manifest(name: str, project: str = "default"):
+def get_manifest(name: str, project: str = "default", current_user: str = Depends(get_current_user)):
     dirs = _read_dirs_for_project(project)
     p = dirs["manifests"] / name
     if not p.exists():
@@ -639,7 +664,7 @@ def get_manifest(name: str, project: str = "default"):
 
 
 @app.get("/kpis")
-def kpis(sheet: str = "vInfo", project: str = "default"):
+def kpis(sheet: str = "vInfo", project: str = "default", current_user: str = Depends(get_current_user)):
     """Compute aggregated KPI metrics across all manifests and chunks."""
     try:
         dirs = _read_dirs_for_project(project)
@@ -663,7 +688,7 @@ def kpis(sheet: str = "vInfo", project: str = "default"):
 
 
 @app.get("/kpis/enterprise")
-def kpis_enterprise(manifest_name: Optional[str] = None, project: str = "default"):
+def kpis_enterprise(manifest_name: Optional[str] = None, project: str = "default", current_user: str = Depends(get_current_user)):
     dirs = _read_dirs_for_project(project)
     manifests = sorted(dirs["manifests"].glob("manifest_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not manifests:
@@ -699,6 +724,7 @@ def analytics_full(
     project: str = "default",
     manifest_name: Optional[str] = None,
     forecast_horizon: int = 3,
+    current_user: str = Depends(get_current_user),
 ):
     dirs = _read_dirs_for_project(project)
     manifests = sorted(dirs["manifests"].glob("manifest_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -729,6 +755,7 @@ def analytics_whatif(
     manifest_name: Optional[str] = None,
     growth_pct: float = 20.0,
     target_vcpu_pcpu: float = 4.0,
+    current_user: str = Depends(get_current_user),
 ):
     dirs = _read_dirs_for_project(project)
     manifests = sorted(dirs["manifests"].glob("manifest_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -760,8 +787,63 @@ def analytics_whatif(
     }
 
 
+@app.get("/export/csv")
+def export_csv(manifest: str, project: str = "default", current_user: str = Depends(get_current_user)):
+    """Export the parsed datasets as raw CSV files in a ZIP archive."""
+    dirs = _read_dirs_for_project(project)
+    
+    if not manifest.endswith(".json"):
+        manifest += ".json"
+        
+    m_path = dirs["manifests"] / manifest
+    if not m_path.exists():
+        return JSONResponse(status_code=404, content={"error": "manifest not found"})
+        
+    try:
+        m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"invalid manifest: {str(e)}"})
+        
+    chunks = m_data.get("chunks", [])
+    if not chunks:
+        return JSONResponse(status_code=400, content={"error": "manifest has no chunks"})
+        
+    ingest_id = m_data.get("ingest_id", "dataset")
+    sheet_name = m_data.get("sheet", "vInfo")
+    
+    out_dir = dirs["exports"] / ingest_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zip_filename = f"csv_export_{ingest_id}_{sheet_name}.zip"
+    zip_path = out_dir / zip_filename
+    
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for idx, chunk in enumerate(chunks):
+                    cp = Path(chunk.get("local_path", ""))
+                    if not cp.exists():
+                        continue
+                    try:
+                        df = pd.read_parquet(cp)
+                        csv_name = f"{sheet_name}_part{idx+1:03d}.csv"
+                        csv_path = tmp_path / csv_name
+                        df.to_csv(csv_path, index=False)
+                        zf.write(csv_path, arcname=csv_name)
+                    except Exception as e:
+                        logger.warning("Failed to convert chunk %s to CSV: %s", cp.name, e)
+    except Exception as e:
+        logger.error("CSV export generation failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": f"CSV generation failed: {str(e)}"})
+        
+    if not zip_path.exists():
+        return JSONResponse(status_code=500, content={"error": "failed to create zip file"})
+        
+    return FileResponse(zip_path, media_type="application/zip", filename=zip_filename)
+
+
 @app.get("/export/pdf")
-def export_pdf(sheet: str = "vInfo"):
+def export_pdf(sheet: str = "vInfo", current_user: str = Depends(get_current_user)):
     k = kpis(sheet)
     out_pdf = DATA_DIR / f"report_{sheet}.pdf"
     c = canvas.Canvas(str(out_pdf), pagesize=letter)

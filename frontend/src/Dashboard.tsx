@@ -1,6 +1,7 @@
 import { Download, Zap, Upload, AlertCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import toast from 'react-hot-toast'
 
 interface KPI {
   total_vms: number
@@ -90,7 +91,7 @@ function Dashboard() {
   const [mappingFile, setMappingFile] = useState<File | null>(null)
   const [selectedManifest, setSelectedManifest] = useState<string>('')
   const [exporting, setExporting] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'pdf' | 'pptx' | 'both'>('pdf')
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'pptx' | 'both' | 'csv'>('pdf')
   const [ingesting, setIngesting] = useState(false)
   const [sheetName, setSheetName] = useState<string>('vInfo,vHost')
   const [chunkSize, setChunkSize] = useState<number>(5000)
@@ -182,18 +183,18 @@ function Dashboard() {
 
   const handleMappingUpload = async () => {
     if (!mappingFile) {
-      alert('Select a CSV mapping file first.')
+      toast.error('Select a CSV mapping file first.')
       return
     }
     try {
       const form = new FormData()
       form.append('file', mappingFile)
       await axios.post(`/projects/${selectedProject}/app-mapping/upload`, form)
-      alert('Application mapping uploaded.')
+      toast.success('Application mapping uploaded.')
       setMappingFile(null)
       await loadData()
     } catch (e: any) {
-      alert(`Mapping upload failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Mapping upload failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     }
   }
 
@@ -211,9 +212,10 @@ function Dashboard() {
       if (p) {
         setSelectedProject(p)
       }
+      toast.success(`Project ${p} created.`)
       await loadData()
     } catch (e: any) {
-      alert(`Create project failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Create project failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     }
   }
 
@@ -239,10 +241,10 @@ function Dashboard() {
       const rows = manifest?.total_rows ?? 0
       const chunks = manifest?.chunk_count ?? 0
       const masked = !!manifest?.anonymized
-      alert(`Ingest completed for project "${selectedProject}": ${rows} rows, ${chunks} chunk(s). Anonymized: ${masked ? 'Yes' : 'No'}.`)
+      toast.success(`Ingest completed for project "${selectedProject}": ${rows} rows, ${chunks} chunk(s). Anonymized: ${masked ? 'Yes' : 'No'}.`)
       setTimeout(() => loadData(), 1000)
     } catch (e: any) {
-      alert(`Ingest failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Ingest failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     } finally {
       setIngesting(false)
     }
@@ -254,11 +256,11 @@ function Dashboard() {
     if (!ok) return
     try {
       await axios.delete(`/projects/${selectedProject}/datasets/${encodeURIComponent(selectedManifest)}`)
-      alert(`Deleted dataset: ${selectedManifest}`)
+      toast.success(`Deleted dataset: ${selectedManifest}`)
       setSelectedManifest('')
       await loadData()
     } catch (e: any) {
-      alert(`Delete dataset failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Delete dataset failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     }
   }
 
@@ -267,21 +269,54 @@ function Dashboard() {
     if (!ok) return
     try {
       await axios.delete(`/projects/${selectedProject}`)
-      alert(`Deleted project: ${selectedProject}`)
+      toast.success(`Deleted project: ${selectedProject}`)
       setSelectedProject('default')
       setSelectedManifest('')
       await loadData()
     } catch (e: any) {
-      alert(`Delete project failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Delete project failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     }
   }
 
   const handleExport = async () => {
     if (!selectedManifest) {
-      alert('Please select a dataset')
+      toast.error('Please select a dataset')
       return
     }
     setExporting(true)
+
+    if (exportFormat === 'csv') {
+      try {
+        const url = `/export/csv?project=${encodeURIComponent(selectedProject)}&manifest=manifest_${encodeURIComponent(selectedManifest.replace('manifest_', ''))}`
+        const res = await axios.get(url, { responseType: 'blob' })
+        const disposition = res.headers['content-disposition'] || ''
+        const match = disposition.match(/filename="?([^"]+)"?/)
+        const filename = match?.[1] || `csv_export_${selectedManifest.replace('.json', '')}.zip`
+        const blobUrl = window.URL.createObjectURL(new Blob([res.data]))
+        const link = document.createElement('a')
+        link.href = blobUrl
+        link.setAttribute('download', filename)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        window.URL.revokeObjectURL(blobUrl)
+        toast.success('CSV dataset downloaded.')
+      } catch (e: any) {
+        if (e?.response?.data instanceof Blob) {
+          try {
+            const text = await e.response.data.text()
+            const payload = JSON.parse(text)
+            toast.error(`CSV export failed: ${payload?.error || text}`)
+            return
+          } catch { /* fall through */ }
+        }
+        toast.error(`CSV export failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      } finally {
+        setExporting(false)
+      }
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('manifest_name', selectedManifest)
@@ -303,18 +338,19 @@ function Dashboard() {
       link.click()
       link.remove()
       window.URL.revokeObjectURL(blobUrl)
+      toast.success('Report downloaded.')
     } catch (e: any) {
       if (e?.response?.data instanceof Blob) {
         try {
           const text = await e.response.data.text()
           const payload = JSON.parse(text)
-          alert(`Export failed: ${payload?.error || text}`)
+          toast.error(`Export failed: ${payload?.error || text}`)
           return
         } catch {
           // fall through
         }
       }
-      alert(`Export failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
+      toast.error(`Export failed: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     } finally {
       setExporting(false)
     }
@@ -347,7 +383,21 @@ function Dashboard() {
         </div>
       )}
 
-      {kpis && (
+      {!kpis && !loading && !error && (
+        <div className="mb-8 p-12 bg-white rounded-lg shadow border border-slate-200 text-center">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">No Data Available</h2>
+          <p className="text-slate-600">Upload a VMware RVTools XLSX payload to populate the dashboard.</p>
+        </div>
+      )}
+
+      {kpis && kpis.total_vms === 0 && (
+        <div className="mb-8 p-12 bg-white rounded-lg shadow border border-slate-200 text-center">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Project is Empty</h2>
+          <p className="text-slate-600">This project has no datasets. Upload an RVTools export to begin.</p>
+        </div>
+      )}
+
+      {kpis && kpis.total_vms > 0 && (
         <div className="mb-8 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div className="bg-slate-100 border border-slate-300 rounded-lg p-4 text-center">
@@ -510,14 +560,14 @@ function Dashboard() {
             <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2"><Upload className="w-5 h-5 text-teal-600" />Upload + Parse (One Click)</h2>
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div>
-                  <label className="block text-xs text-slate-600 mb-1">Sheet(s)</label>
-                  <input
-                    value={sheetName}
-                    onChange={(e) => setSheetName(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Use comma-separated sheets, e.g. <code>vInfo,vHost</code> for hardware enrichment.</p>
-                </div>
+                <label className="block text-xs text-slate-600 mb-1">Sheet(s)</label>
+                <input
+                  value={sheetName}
+                  onChange={(e) => setSheetName(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Use comma-separated sheets, e.g. <code>vInfo,vHost</code> for hardware enrichment.</p>
+              </div>
               <div>
                 <label className="block text-xs text-slate-600 mb-1">Chunk Size</label>
                 <input
@@ -585,10 +635,11 @@ function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-700 mb-2">Export format</label>
-                  <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'pptx' | 'both')} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+                  <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'pptx' | 'both' | 'csv')} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
                     <option value="pdf">PDF</option>
                     <option value="pptx">PowerPoint (PPTX)</option>
                     <option value="both">Both PDF + PPTX</option>
+                    <option value="csv">Raw Data (CSV ZIP)</option>
                   </select>
                 </div>
                 <div>
